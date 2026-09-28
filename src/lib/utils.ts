@@ -52,6 +52,31 @@ export function isImageMime(mime: string | undefined) {
   return mime.startsWith("image/");
 }
 
+/**
+ * Estensione del file per un MIME immagine.
+ *
+ * Vive in utils perché due moduli ne hanno bisogno (il provider Magnific e il
+ * downloader delle immagini del catalogo) e il fallback `png` deve essere
+ * identico: un'estensione diversa per lo stesso MIME produrrebbe due nomi
+ * diversi per lo stesso formato.
+ */
+export function imageExtensionForMime(mime: string | undefined): string {
+  switch (mime) {
+    case "image/png":
+      return "png";
+    case "image/jpeg":
+      return "jpg";
+    case "image/gif":
+      return "gif";
+    case "image/webp":
+      return "webp";
+    case "image/avif":
+      return "avif";
+    default:
+      return "png";
+  }
+}
+
 export function isVideoMime(mime: string | undefined) {
   if (!mime) return false;
   return mime.startsWith("video/");

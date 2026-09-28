@@ -100,7 +100,14 @@ export interface CatalogProposalDto {
   commercial: CatalogCommercialDto;
   /** Solo i campi davvero valorizzati: il resto va trattato come assente. */
   commercialFieldsPresent: CommercialField[];
-  officialImage: { url: string; filename: string } | null;
+  /**
+   * Immagine ufficiale della proposta, con l'id della riga `CatalogImage`.
+   *
+   * L'id serve alla provenienza: quando la copia locale viene materializzata,
+   * l'asset deve poter risalire all'immagine esatta del catalogo, non solo
+   * all'URL (che può cambiare tra un'importazione e l'altra).
+   */
+  officialImage: { id: string; url: string; filename: string } | null;
   anomalies: { code: CatalogAnomalyCode; label: string; detail: string }[];
   /** Si può scrivere copy su questa proposta? */
   usable: boolean;
@@ -179,7 +186,7 @@ export function toCatalogProposalDto(
       excluded: proposal.excluded ?? null,
     },
     commercialFieldsPresent: present,
-    officialImage: image ? { url: image.url, filename: image.filename } : null,
+    officialImage: image ? { id: image.id, url: image.url, filename: image.filename } : null,
     anomalies: anomalies.map((a) => ({ code: a.code, label: a.label, detail: a.detail })),
     usable: reasons.length === 0,
     unusableReason: reasons.length ? reasons.join("; ") : null,

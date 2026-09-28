@@ -1,5 +1,7 @@
 import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { prisma } from "../src/lib/prisma";
 import { runAgent, SYSTEM_PROMPT, type AgentStreamEvent } from "../src/lib/ai/agent";
 import { setAiProvider } from "../src/lib/ai/factory";
@@ -21,13 +23,18 @@ import {
 } from "../src/lib/services/catalog-ai";
 import {
   CONTENT_FORMATS,
+  MAX_VISUAL_PROMPT_LENGTH,
   availableFormats,
   buildVisualDirection,
   catalogCopyFromProposal,
   pickEditorialFormat,
+  visualPromptFromDirection,
   type ContentFormat,
+  type VisualDirection,
 } from "../src/lib/ai/catalog-content";
 import { normalizeForMatch, textMatchesQuery } from "../src/lib/catalog/text";
+
+const REPO_ROOT = join(__dirname, "..");
 
 /**
  * Catalogo → AI → createContent.
@@ -555,6 +562,164 @@ test("7b. senza immagine ufficiale la direzione visual chiede una generazione fu
   assert.equal(visual.officialImageUrl, null);
   assert.equal(visual.needsGeneration, true);
   assert.ok(visual.generationBrief && visual.generationBrief.length > 20);
+});
+
+/* ------------------------------------------------------------------ *
+ * 7c. prompt del visual: dalla direzione al testo del generatore
+ * ------------------------------------------------------------------ */
+
+/**
+ * Costruisce una direzione a mano, senza catalogo e senza database.
+ *
+ * Serve a provare che il prompt dipende solo dalla direzione: se qui funziona,
+ * nessun DTO, nessuna query e nessun provider sono necessari.
+ */
+function directionFromScratch(overrides: Partial<VisualDirection> = {}): VisualDirection {
+  return {
+    format: "HERO_DESTINATION",
+    visualType: "GENERATED_HERO",
+    concept: "Immagine di viaggio sobria e aspirazionale",
+    subject: "un dettaglio iconico del luogo",
+    composition: "elemento in terzi, spazio negativo in alto",
+    mood: "chiaro, luminoso, professionale",
+    textOverlay: { allowed: true, lines: ["Testonia"] },
+    useOfficialImage: false,
+    officialImageUrl: null,
+    officialImageFilename: null,
+    needsGeneration: true,
+    generationBrief: null,
+    groundedOn: {
+      catalogProposalId: "p1",
+      proposalName: BARE_NAME,
+      destination: BARE_DESTINATION,
+      sourceUrl: `${SOURCE_PAGE}#testonia`,
+      sourceType: "FLYER",
+    },
+    ...overrides,
+  };
+}
+
+test("7c. il prompt nomina la proposta e la destinazione della direzione", async () => {
+  const { proposals } = await searchCatalogForAi({ query: FULL_DESTINATION });
+  const full = proposals.find((p) => p.id === fullId)!;
+
+  const direction = buildVisualDirection(full, pickEditorialFormat(full, null).format);
+  const prompt = visualPromptFromDirection(direction);
+
+  assert.ok(prompt.includes(FULL_NAME), "il nome della proposta deve comparire");
+  assert.ok(prompt.includes(FULL_DESTINATION), "la destinazione deve comparire");
+  assert.ok(prompt.includes(direction.format), "il formato editoriale deve comparire");
+  // Le quattro parti della direzione devono arrivare al generatore: una direzione
+  // che non arriva al prompt non guida nulla.
+  for (const part of [direction.concept, direction.subject, direction.composition, direction.mood]) {
+    assert.ok(prompt.includes(part), `la direzione "${part}" deve arrivare al prompt`);
+  }
+  assert.equal(prompt, visualPromptFromDirection(direction), "prompt deterministico");
+});
+
+test("7d. il prompt vieta altre destinazioni e non inventa dati commerciali", async () => {
+  const { proposals } = await searchCatalogForAi({ query: FULL_DESTINATION });
+  const full = proposals.find((p) => p.id === fullId)!;
+  const direction = buildVisualDirection(full, pickEditorialFormat(full, null).format);
+
+  const prompt = visualPromptFromDirection(direction);
+  const hay = normalizeForMatch(prompt);
+
+  // Il vincolo di luogo è il motivo per cui il generatore non "allarga" la scena.
+  assert.match(prompt, /ESCLUSIVAMENTE/);
+  assert.match(prompt, /non introdurre altre destinazioni/i);
+  assert.ok(prompt.includes(FULL_DESTINATION), "il vincolo nomina la destinazione reale");
+
+  // Dati che la proposta contiene ma la direzione non trasmette: se uno di questi
+  // arrivasse al prompt, il generatore potrebbe scriverlo o usarlo come traccia.
+  // Si controllano i valori, non le parole: "hotel" e "prezzi" compaiono di proposito
+  // dentro il divieto, ed è il divieto che va verificato alla riga qui sopra.
+  for (const leak of [
+    "890",
+    "1290",
+    "eur",
+    "dicembre",
+    "2026",
+    "5 notti",
+    "milano e roma",
+    "volo e hotel",
+    "scatti e assicurazione",
+  ]) {
+    assert.ok(!hay.includes(leak), `il prompt non deve contenere "${leak}"`);
+  }
+
+  // La prova che il divieto sia un divieto e non una descrizione: le parole
+  // commerciali devono comparire solo nella frase che le nega.
+  assert.match(prompt, /non mostrare prezzi, date, durate, servizi, hotel/i);
+  assert.ok(
+    !/mostra prezzi|servizi inclusi|check-in|hotel [A-ZÀ-Ý]/.test(prompt),
+    "il prompt deve nominare i dettagli commerciali solo per vietarli",
+  );
+});
+
+test("7e. il prompt non inventa destinazioni e resta entro il limite del provider", async () => {
+  const barePrompt = visualPromptFromDirection(directionFromScratch());
+
+  // Nessuna destinazione che non sia quella della direzione.
+  for (const alt of [
+    ABSENT_DESTINATION,
+    "Alpi",
+    "Costiera",
+    "Santorini",
+    "Bali",
+    "New York",
+    "Parigi",
+  ]) {
+    assert.ok(
+      !normalizeForMatch(barePrompt).includes(normalizeForMatch(alt)),
+      `il prompt non deve contenere "${alt}"`,
+    );
+  }
+  assert.ok(barePrompt.includes(BARE_DESTINATION), "l'unica destinazione ammessa è quella della direzione");
+  assert.ok(barePrompt.length <= MAX_VISUAL_PROMPT_LENGTH, `prompt troppo lungo: ${barePrompt.length}`);
+
+  // Direzione patologica: i limiti per campo devono tenere anche qui.
+  const huge = directionFromScratch({
+    concept: "c".repeat(2000),
+    subject: "s".repeat(2000),
+    composition: "p".repeat(2000),
+    mood: "m".repeat(2000),
+    groundedOn: {
+      catalogProposalId: "p2",
+      proposalName: "N".repeat(600),
+      destination: "D".repeat(600),
+      sourceUrl: `${SOURCE_PAGE}#huge`,
+      sourceType: "FLYER",
+    },
+  });
+  const hugePrompt = visualPromptFromDirection(huge);
+  assert.ok(
+    hugePrompt.length <= MAX_VISUAL_PROMPT_LENGTH,
+    `prompt patologico troppo lungo: ${hugePrompt.length}`,
+  );
+  // Anche quando tutto viene sacrificato, identità e vincolo di luogo restano:
+  // sono le due garanzie che il prompt non può perdere.
+  assert.match(hugePrompt, /ESCLUSIVAMENTE/);
+  assert.match(hugePrompt, /non introdurre altre destinazioni/i);
+});
+
+test("7f. il prompt è deterministico e la funzione è pura", () => {
+  const direction = directionFromScratch();
+
+  const first = visualPromptFromDirection(direction);
+  for (let i = 0; i < 4; i += 1) {
+    assert.equal(visualPromptFromDirection(direction), first, "stessa direzione = stesso prompt");
+  }
+  // La funzione non deve aver modificato il suo input.
+  assert.deepEqual(direction, directionFromScratch(), "input non mutato");
+  // E non deve dipendere da nulla di esterno: qui non esistono DTO, date o DB.
+  assert.ok(first.length > 0, "il prompt non è vuoto");
+  assert.ok(!/\d{4}-\d{2}-\d{2}/.test(first), "nessuna data nel prompt");
+
+  const source = readFileSync(join(REPO_ROOT, "src/lib/ai/catalog-content.ts"), "utf8");
+  for (const forbidden of ["fetch(", "getImageProvider", "prisma.", "require(", "node:fs"]) {
+    assert.ok(!source.includes(forbidden), `catalog-content.ts non deve contenere "${forbidden}"`);
+  }
 });
 
 /* ------------------------------------------------------------------ *

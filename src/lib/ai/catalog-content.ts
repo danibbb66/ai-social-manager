@@ -360,3 +360,116 @@ export function buildVisualDirection(
     groundedOn: anchored,
   };
 }
+
+/* ──────────────────────────────────────────────────────────────────────── *
+ * Prompt del visual: dalla direzione al testo per il generatore immagini
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** Limite del prompt: lo impone il provider immagini (Magnific: 1000 caratteri). */
+export const MAX_VISUAL_PROMPT_LENGTH = 1000;
+
+/**
+ * Stile di casa: stringa fissa, non un dato della proposta.
+ *
+ * Vive qui e non dentro la `VisualDirection` perché non cambia mai e non deve
+ * derivare da nulla: se dipendesse dalla proposta, lo stesso posto produrrebbe
+ * due prompt diversi a seconda dei dati commerciali, e il prompt smetterebbe
+ * di essere confrontabile.
+ */
+const VISUAL_PROMPT_STYLE =
+  "fotografia di viaggio realistica, luce naturale, composizione professionale, " +
+  "alta qualità, senza testo, loghi o filigrane";
+
+/** Vincolo quando la proposta non ha né destinazione né nome utilizzabile. */
+const NO_PLACE_CONSTRAINT =
+  "La scena deve raffigurare ESCLUSIVAMENTE il luogo della proposta: non introdurre " +
+  "altre destinazioni, città, regioni, isole, spiagge o monumenti. Non mostrare prezzi, " +
+  "date, durate, servizi, hotel o altri dettagli commerciali.";
+
+/**
+ * Un campo del prompt, compattato e troncato alla sua quota.
+ *
+ * Il troncamento avviene qui, per campo, e non a fine prompt: così un nome
+ * lunghissimo non può spingere fuori il limite la parte che garantisce che la
+ * destinazione sia rispettata.
+ */
+function clampPromptPart(value: string | null | undefined, max: number): string {
+  if (!value) return "";
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** Il vincolo di luogo, con la destinazione reale al centro. */
+function placeConstraint(place: string): string {
+  return (
+    `La scena deve raffigurare ESCLUSIVAMENTE ${place}: non introdurre altre ` +
+    "destinazioni, città, regioni, isole, spiagge o monumenti. Non mostrare prezzi, " +
+    "date, durate, servizi, hotel o altri dettagli commerciali."
+  );
+}
+
+/**
+ * Prompt di generazione derivato dalla `VisualDirection`.
+ *
+ * È il punto in cui una direzione strutturata diventa il testo che il
+ * generatore di immagini riceve. Le garanzie, in ordine:
+ *
+ *  - **Grounded**: entra solo ciò che è già nella direzione (nome, destinazione,
+ *    concept, subject, composition, mood). Nessuna conoscenza esterna, nessun
+ *    dato commerciale: la direzione non li contiene, quindi qui non compaiono.
+ *  - **Non inventato**: il prompt vieta esplicitamente altre destinazioni e
+ *    qualsiasi dettaglio commerciale, perché è il generatore a riempirlo da solo
+ *    se gliene lascia lo spazio.
+ *  - **Deterministico**: stesso input, stesso carattere per carattere. Niente
+ *    date, niente locale, niente casualità.
+ *  - **Entro il limite del provider**: le sezioni sacrificabili escono in ordine
+ *    di priorità decrescente finché il prompt non rientra nel limite. Identità
+ *    e vincolo di luogo non sono mai sacrificabili, e da soli stanno ampiamente
+ *    sotto il limite: il troncamento finale è solo la rete di sicurezza.
+ *
+ * Nota: il prompt non viene usato quando la direzione ha `useOfficialImage`
+ * (in quel caso si riusa la foto del catalogo). Chi decide è il chiamante.
+ */
+export function visualPromptFromDirection(direction: VisualDirection): string {
+  const { groundedOn, format } = direction;
+
+  const name = clampPromptPart(groundedOn.proposalName, 120);
+  const destination = clampPromptPart(groundedOn.destination, 80);
+  // La destinazione è l'unico riferimento geografico autorizzato; quando manca
+  // si ripiega sul nome della proposta, che è comunque un dato reale.
+  const place = destination || name;
+
+  const identity = [
+    name ? `Proposta di viaggio "${name}"` : null,
+    destination && destination !== name ? `luogo: ${destination}` : null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(", ");
+
+  const sections: { text: string; required: boolean; priority: number }[] = [
+    { text: identity, required: true, priority: 0 },
+    { text: place ? placeConstraint(place) : NO_PLACE_CONSTRAINT, required: true, priority: 0 },
+    { text: `Formato editoriale: ${clampPromptPart(format, 40)}`, required: false, priority: 5 },
+    { text: clampPromptPart(direction.concept, 200), required: false, priority: 4 },
+    { text: clampPromptPart(direction.subject, 240), required: false, priority: 3 },
+    { text: clampPromptPart(direction.composition, 200), required: false, priority: 2 },
+    { text: clampPromptPart(direction.mood, 160), required: false, priority: 1 },
+    { text: VISUAL_PROMPT_STYLE, required: false, priority: 0 },
+  ];
+
+  const kept = sections.filter((s) => s.text.length > 0);
+  const length = (): number => kept.map((s) => s.text).join(" ").length;
+
+  while (length() > MAX_VISUAL_PROMPT_LENGTH) {
+    const droppable = kept.filter((s) => !s.required);
+    if (droppable.length === 0) break;
+    const lowest = droppable.reduce((min, s) => (s.priority < min.priority ? s : min));
+    kept.splice(kept.lastIndexOf(lowest), 1);
+  }
+
+  const prompt = kept.map((s) => s.text).join(" ");
+  return prompt.length > MAX_VISUAL_PROMPT_LENGTH
+    ? prompt.slice(0, MAX_VISUAL_PROMPT_LENGTH).trimEnd()
+    : prompt;
+}

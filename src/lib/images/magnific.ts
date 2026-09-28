@@ -6,7 +6,7 @@ import {
   ImageUpload,
 } from "@/lib/images/provider";
 import { saveUploadedFile, sniffMediaMime } from "@/lib/uploads";
-import { isImageMime } from "@/lib/utils";
+import { imageExtensionForMime, isImageMime } from "@/lib/utils";
 import { logAIError } from "@/lib/logger";
 
 /** Base URL pubblica e documentata dell'API Magnific. */
@@ -101,21 +101,6 @@ function isAllowedCdnUrl(raw: string): boolean {
   const host = parsed.hostname.toLowerCase();
   if (ALLOWED_CDN_HOSTS.has(host)) return true;
   return [...ALLOWED_CDN_HOSTS].some((h) => host.endsWith(`.${h}`));
-}
-
-function extensionForMime(mime: string): string {
-  switch (mime) {
-    case "image/png":
-      return "png";
-    case "image/jpeg":
-      return "jpg";
-    case "image/gif":
-      return "gif";
-    case "image/webp":
-      return "webp";
-    default:
-      return "png";
-  }
 }
 
 /** Scarica l'immagine da un URL CDN verificato con limite di dimensione e timeout. */
@@ -254,7 +239,7 @@ export async function generateWithMagnific(
 
   const saved = await saveUploadedFile({
     buffer,
-    originalName: `magnific-${Date.now()}.${extensionForMime(mimeType)}`,
+    originalName: `magnific-${Date.now()}.${imageExtensionForMime(mimeType)}`,
     mimeType,
   });
 
