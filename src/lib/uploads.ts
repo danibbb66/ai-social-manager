@@ -162,6 +162,26 @@ export async function saveUploadedFile(input: {
   };
 }
 
+/**
+ * Il file dietro un URL di upload esiste ancora su disco?
+ *
+ * Serve a distinguere una riga `ContentAsset` ancora valida da una che punta a
+ * un file sparito: riusare la seconda produrrebbe un contenuto con immagine
+ * rotta, che è peggio di rifare il download.
+ */
+export async function uploadedFileExists(url: string): Promise<boolean> {
+  const match = url.match(/^\/uploads\/([a-z]+)\/([^/]+)$/);
+  if (!match) return false;
+  const [, sub, name] = match;
+  if (sub === ".." || name === ".." || !name) return false;
+  try {
+    await fs.access(path.join(process.cwd(), "public", "uploads", sub, name));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Elimina un file dagli upload (il percorso deve essere sotto /uploads) */
 export async function deleteUploadedFile(url: string): Promise<boolean> {
   const match = url.match(/^\/uploads\/([a-z]+)\/([^/]+)$/);
