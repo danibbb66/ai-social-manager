@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+next-env.d.ts
+
+# production
+build/
+
+# env
+.env
+.env.local
+# qualsiasi variante .env.* (production, test, develop...) tranne il template
+.env.*
+!.env.example
+
+# database
+*.db
+*.db-journal
+prisma/dev.db*
+
+# copia di sicurezza locale del catalogo: tiene i dati fuori dal repository
+_backup/
+
+# uploads (runtime data)
+public/uploads/*
+!public/uploads/.gitkeep
+
+# misc
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+*.tsbuildinfo
+.vercel

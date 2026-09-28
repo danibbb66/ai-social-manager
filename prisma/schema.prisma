@@ -1,0 +1,416 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum ContentStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  REJECTED
+  FAILED
+}
+
+enum ContentType {
+  POST
+  CAROUSEL
+  VIDEO
+}
+
+enum Platform {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+}
+
+enum AssetKind {
+  IMAGE
+  VIDEO
+  AUDIO
+  FILE
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum AIJobKind {
+  CAPTION
+  HASHTAGS
+  IMAGE
+  CAROUSEL
+  VIDEO
+  IDEA
+  PUBLISH
+  CHAT
+}
+
+enum AIJobStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+// ─────────────────────────────────────────────────────────────
+// Catalogo Agenzia
+//
+// Il catalogo rappresenta ciò che l'agenzia MOSTRA sul proprio sito.
+// Non è una fonte commerciale: i campi economici restano nulli finché
+// non arriva una fonte autoritativa (operatore o export del booking engine).
+// ─────────────────────────────────────────────────────────────
+
+/** Natura tecnica della fonte da cui proviene il catalogo. */
+enum CatalogSourceKind {
+  SITE_WORDPRESS
+  BOOKING_ENGINE
+  MANUAL
+}
+
+/**
+ * L'autorità commerciale della fonte. PRESENTATION significa che la fonte
+ * vale per l'esistenza e l'immagine dell'offerta, NON per prezzo/date/servizi.
+ */
+enum CatalogAuthority {
+  PRESENTATION
+  COMMERCIAL
+}
+
+/** Dove, all'interno della fonte, è stata letta la proposta. */
+enum CatalogSourceType {
+  FLYER
+  PAGE
+  ENGINE
+  OPERATOR
+}
+
+/** Come sono stati ottenuti i dati. OCR non è mai una fonte commerciale. */
+enum CatalogExtraction {
+  HTML
+  JSON
+  OCR
+  MANUAL
+}
+
+/** Livello di affidabilità del record. Solo una revisione umana porta a VERIFIED. */
+enum CatalogConfidence {
+  UNVERIFIED
+  OCR_DRAFT
+  VERIFIED
+}
+
+/** Stato editoriale della proposta nel catalogo. */
+enum CatalogProposalStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+  WITHDRAWN
+}
+
+enum CatalogImageRole {
+  HERO
+  FLYER
+  GALLERY
+}
+
+model Brand {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  website          String?
+  instagram        String?
+  facebook         String?
+  tiktok           String?
+  logoUrl          String?
+  colors           Json?
+  fonts            Json?
+  tone             String?
+  audience         String?
+  style            String?
+  preferredTopics  Json?
+  forbiddenTopics  Json?
+  forbiddenWords   Json?
+  preferredCtas    Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model SocialAccount {
+  id        String   @id @default(cuid())
+  platform  Platform
+  name      String
+  handle    String?
+  configured Boolean  @default(false)
+  note      String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  contents  ContentPlatform[]
+
+  @@unique([platform, name])
+}
+
+model Content {
+  id            String        @id @default(cuid())
+  type          ContentType   @default(POST)
+  title         String?
+  caption       String?
+  hashtags      String?
+  status        ContentStatus @default(DRAFT)
+  scheduledDate DateTime?
+  scheduledOnly Boolean       @default(false)
+  ideaId        String?
+  idea          ContentIdea?  @relation(fields: [ideaId], references: [id])
+  /// Proposta del Catalogo Agenzia da cui questo contenuto deriva. Null quando
+  /// il contenuto è nato da una richiesta libera, senza ancoraggio al catalogo.
+  /// SetNull: ritirare o cancellare una proposta non deve mai distruggere un
+  /// DRAFT già creato, deve solo sganciarlo.
+  catalogProposalId String?
+  catalogProposal   CatalogProposal? @relation(fields: [catalogProposalId], references: [id], onDelete: SetNull)
+  platforms     ContentPlatform[]
+  assets        ContentAsset[]
+  slides        CarouselSlide[]
+  approvals     Approval[]
+  jobs          AIJob[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([status])
+  @@index([scheduledDate])
+  @@index([catalogProposalId])
+}
+
+model ContentPlatform {
+  id          String         @id @default(cuid())
+  contentId   String
+  content     Content        @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  platform    Platform
+  accountId   String?
+  account     SocialAccount? @relation(fields: [accountId], references: [id])
+  externalId  String?
+  publishedAt DateTime?
+  error       String?
+
+  @@unique([contentId, platform])
+}
+
+model ContentAsset {
+  id        String    @id @default(cuid())
+  kind      AssetKind @default(IMAGE)
+  contentId String?
+  content   Content?  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  url       String
+  filename  String
+  mimeType  String?
+  size      Int?
+  metadata  Json?
+  createdAt DateTime  @default(now())
+
+  @@index([contentId])
+}
+
+model CarouselSlide {
+  id        String  @id @default(cuid())
+  contentId String
+  content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  imageUrl  String?
+  title     String?
+  text      String?
+  order     Int     @default(0)
+
+  @@index([contentId])
+}
+
+model ContentIdea {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  topic       String?
+  createdAt   DateTime  @default(now())
+  contents    Content[]
+}
+
+model ChatConversation {
+  id        String        @id @default(cuid())
+  title     String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id             String    @id @default(cuid())
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           ChatRole
+  content        String
+  toolName       String?
+  toolArgs       Json?
+  toolSummary    String?
+  createdAt      DateTime  @default(now())
+
+  @@index([conversationId])
+}
+
+model AIJob {
+  id        String      @id @default(cuid())
+  kind      AIJobKind
+  status    AIJobStatus @default(PENDING)
+  contentId String?
+  content   Content?    @relation(fields: [contentId], references: [id])
+  input     Json?
+  output    Json?
+  error     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model Approval {
+  id         String            @id @default(cuid())
+  contentId  String
+  content    Content           @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  decision   ApprovalDecision
+  note       String?
+  decidedBy  String?
+  createdAt  DateTime          @default(now())
+
+  @@index([contentId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  entityType String?
+  entityId   String?
+  detail     Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Catalogo Agenzia (Tier 2: livello di presentazione del sito)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Una fonte da cui il catalogo è stato letto.
+ *
+ * authority=PRESENTATION dichiara esplicitamente che questa fonte non è
+ * autoritativa per prezzo, date, hotel o servizi: vale solo per l'esistenza
+ * della proposta e per le immagini ufficiali.
+ */
+model CatalogSource {
+  id            String           @id @default(cuid())
+  domain        String
+  baseUrl       String
+  /// Pagina/listato specifico da cui leggere le card (non nullable: è la
+  /// chiave di idempotenza insieme al dominio).
+  pageUrl       String
+  kind          CatalogSourceKind @default(SITE_WORDPRESS)
+  authority     CatalogAuthority  @default(PRESENTATION)
+  lastCrawledAt DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  proposals     CatalogProposal[]
+
+  @@unique([domain, pageUrl])
+}
+
+/**
+ * Una proposta di viaggio letta dalla fonte.
+ *
+ * `name` è l'unico dato testuale che la fonte pubblica espone davvero
+ * (l'attributo data-title della card). Tutto il resto commerciale è
+ * deliberatamente nullable e NON viene popolato dall'import della vetrina:
+ * è preferibile un campo vuoto a un dato inventato.
+ *
+ * `contentHash` (sourceId + hash) è la chiave di idempotenza: ricalcolare
+ * l'import non crea duplicati e non tocca i campi già validati a mano.
+ */
+model CatalogProposal {
+  id          String   @id @default(cuid())
+  name        String
+  destination String?
+  /// Non popolati dall'import della vetrina: restano nulli finché non
+  /// arriva una fonte commerciale.
+  tripType    String?
+  category    String?
+
+  // ── Campi commerciali: NULL per definizione al primo import ──
+  periodStart      DateTime?
+  periodEnd        DateTime?
+  departureCities  String?
+  durationNights   Int?
+  // SQLite non supporta Decimal: Float è il tipo monetario disponibile.
+  // Diventa rilevante solo quando i prezzi arriveranno davvero.
+  priceFrom        Float?
+  priceTo          Float?
+  currency         String?
+  priceNote        String?
+  included         String?
+  excluded         String?
+
+  // ── Provenienza ──
+  sourceId        String
+  source          CatalogSource     @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  sourceUrl       String
+  sourceType      CatalogSourceType @default(FLYER)
+  extraction      CatalogExtraction @default(HTML)
+  confidence      CatalogConfidence  @default(UNVERIFIED)
+  contentHash     String
+  /// Posizione della card nella pagina sorgente, per un ordine stabile.
+  sourceOrder     Int?
+  acquiredAt      DateTime          @default(now())
+  sourceUpdatedAt DateTime?
+  lastSeenAt      DateTime          @default(now())
+  /// Impostata quando la card sparisce dal sito. Il record NON viene
+  /// cancellato mai: l'import è additivo per costruzione.
+  missingSince    DateTime?
+  status          CatalogProposalStatus @default(ACTIVE)
+  updatedAt       DateTime          @updatedAt
+
+  images          CatalogImage[]
+  /// Contenuti sociali creati a partire da questa proposta. È il legame che
+  /// permette di risalire da un DRAFT alla fonte commerciale/editoriale.
+  contents        Content[]
+
+  @@unique([sourceId, contentHash])
+  @@index([status])
+  @@index([confidence])
+  @@index([destination])
+}
+
+/// Immagine ufficiale della proposta. Punta all'ORIGINALE remoto:
+/// nessun file viene copiato in /public/uploads e nessun Asset viene creato.
+model CatalogImage {
+  id         String            @id @default(cuid())
+  proposalId String
+  proposal   CatalogProposal   @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  url        String
+  filename   String
+  /// Non popolati: si evitano richieste extra per immagine verso il sito
+  /// dell'agenzia. Restano nulli finché non serve un layout senza shift.
+  width      Int?
+  height     Int?
+  role       CatalogImageRole  @default(FLYER)
+  isOfficial Boolean           @default(true)
+  acquiredAt DateTime          @default(now())
+
+  @@unique([proposalId, url])
+  @@index([url])
+}
