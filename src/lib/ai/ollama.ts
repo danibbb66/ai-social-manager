@@ -20,7 +20,13 @@ interface OllamaChatRequest {
    * vuoto, spesso `{}`. Per questo agente ragioniamo senza thinking.
    */
   think?: boolean;
-  options?: { temperature?: number };
+  /**
+   * Opzioni passate a llama.cpp. `num_ctx` e `num_predict` hanno default
+   * applicativi (`config.ollamaNumCtx` / `config.ollamaNumPredict`): senza un
+   * contesto sufficiente il prompt dell'agente verrebbe troncato dal più
+   * vecchio, cioè dalle regole in testa al system prompt.
+   */
+  options?: { temperature?: number; num_ctx?: number; num_predict?: number };
 }
 
 /**
@@ -170,7 +176,11 @@ export class OllamaProvider implements AiProvider {
       })),
       stream: true,
       think: false,
-      options: { temperature: options?.temperature ?? 0.7 },
+      options: {
+        temperature: options?.temperature ?? 0.7,
+        num_ctx: options?.numCtx ?? config.ollamaNumCtx,
+        num_predict: options?.numPredict ?? config.ollamaNumPredict,
+      },
     };
     if (options?.jsonSchema) body.format = options.jsonSchema;
     else if (options?.jsonMode) body.format = "json";
@@ -221,6 +231,9 @@ export class OllamaProvider implements AiProvider {
       let fullText = "";
 
       let receivedAnyContent = false;
+      // Contatori dell'ultimo chunk `done`: diagnostica sul contesto.
+      let promptEvalCount: number | undefined;
+      let evalCount: number | undefined;
       try {
         for (;;) {
           const { done, value } = await reader.read();
@@ -240,7 +253,16 @@ export class OllamaProvider implements AiProvider {
               continue;
             }
             if (!json || typeof json !== "object") continue;
-            if ((json as { done?: unknown }).done === true) continue;
+            const final = json as {
+              done?: unknown;
+              prompt_eval_count?: unknown;
+              eval_count?: unknown;
+            };
+            if (typeof final.prompt_eval_count === "number") {
+              promptEvalCount = final.prompt_eval_count;
+            }
+            if (typeof final.eval_count === "number") evalCount = final.eval_count;
+            if (final.done === true) continue;
             const msg = (json as { message?: unknown }).message;
             if (!msg || typeof msg !== "object") continue;
             // `thinking` (qwen3) è disabilitato via think:false: se arrivasse
@@ -290,7 +312,7 @@ export class OllamaProvider implements AiProvider {
         );
       }
 
-      return { text: fullText.trim() };
+      return { text: fullText.trim(), promptEvalCount, evalCount };
     } finally {
       t.clear();
     }

@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "../src/lib/prisma";
+import { createJobOwnership } from "./helpers/aijob-ownership";
 import {
   CATALOG_GENERATED_ORIGIN,
   CATALOG_VISUAL_ORIGIN,
@@ -57,10 +58,10 @@ const savedUrls: string[] = [];
 const generatedFiles: string[] = [];
 /** Job AI creati dai test, per poterli contare e ripulire. */
 const jobIds: string[] = [];
+/** I job AI di questa suite si ripuliscono per identità, non per data di nascita. */
+const jobOwnership = createJobOwnership(["IMAGE"]);
 
 let baselineFiles: string[] = [];
-/** Inizio della suite: i job AI nati dopo questo istante sono di questa suite. */
-let suiteStart = new Date();
 let proposalId = "";
 let otherProposalId = "";
 let otherImageId = "";
@@ -178,16 +179,16 @@ async function cleanupGenerated() {
   for (const id of assetIds.splice(0)) {
     await prisma.contentAsset.deleteMany({ where: { id } });
   }
+  // I job del ramo generato restano anche quando il test non ha registrato
+  // l'id: sono di questa suite e si riconoscono per identità, non per data.
+  // Prima dei contenuti, che azzererebbero il `contentId` dei job.
+  await jobOwnership.deleteOwned(contentIds);
   for (const id of contentIds.splice(0)) {
     await prisma.content.deleteMany({ where: { id } });
   }
   for (const id of jobIds.splice(0)) {
     await prisma.aIJob.deleteMany({ where: { id } });
   }
-  // I job creati dal ramo generato restano anche quando il test non ha
-  // registrato l'id: sono riconoscibili per la data di nascita e sono di questa
-  // suite, quindi pulirli qui non tocca il lavoro di nessun altro test.
-  await prisma.aIJob.deleteMany({ where: { createdAt: { gte: suiteStart } } });
   const now = await listUploads();
   for (const f of now.filter((f) => !baselineFiles.includes(f))) {
     await fs.unlink(f).catch(() => undefined);
@@ -279,7 +280,7 @@ function directionFor(dto: CatalogProposalDto, format: ContentFormat): VisualDir
 
 before(async () => {
   baselineFiles = await listUploads();
-  suiteStart = new Date();
+  await jobOwnership.capture();
   provider = new SpyImageProvider();
   setImageProvider(provider);
 

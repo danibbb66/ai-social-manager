@@ -92,16 +92,27 @@ export async function updateConversationTitle(
   });
 }
 
+/**
+ * Ultimi `limit` messaggi della conversazione, dal più vecchio al più recente.
+ *
+ * `take` in Prisma viene applicato DOPO l'ordinamento: con `createdAt: "asc"`
+ * si prendevano i messaggi più VECCHI, quindi oltre il limite sparivano
+ * gli ultimi scambi, compresa la richiesta appena salvata (bug reale del
+ * 26/09). Si ordina al contrario per prendere i più recenti e si ribalta
+ * l'array, perché il prompt richiede la sequenza cronologica.
+ * `id` (cuid, monotono) è il tie-breaker: `createdAt` ha granularità al
+ * millisecondo e più messaggi possono condividerlo.
+ */
 export async function getMessageHistory(
   conversationId: string,
   limit = 20
 ): Promise<ChatMessage[]> {
-  const messages = await prisma.chatMessage.findMany({
+  const newestFirst = await prisma.chatMessage.findMany({
     where: { conversationId },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit,
   });
-  return messages;
+  return newestFirst.reverse();
 }
 
 // Limiti per singolo messaggio (prevengono context overflow)

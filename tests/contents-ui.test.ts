@@ -89,8 +89,44 @@ describe("Contents è l'unico centro operativo", () => {
   });
 });
 
-describe("I filtri sono globali e non reintroducono REVIEW", () => {
-  test("i conteggi vengono da countsByStatus, non dal dataset filtrato", () => {
+describe("Contents non carica più l'intero elenco", () => {
+  test("la lista è paginata con un limite esplicito, non con il dataset completo", () => {
+    assert.match(contentsPage, /countContents\(/, "la pagina deve contare gli elementi filtrati");
+    assert.match(contentsPage, /limit: PAGE_SIZE/);
+    assert.match(contentsPage, /offset/);
+    // Il tetto di 300 elementi era la causa di 4,2 s e 1,5 MB di HTML.
+    assert.doesNotMatch(
+      contentsPage,
+      /limit: 300/,
+      "la rotta non deve più caricare 300 contenuti con tutte le relazioni"
+    );
+  });
+
+  test("il paging è un link server-side, senza form aggiuntivi né stato client", () => {
+    // I controlli di pagina devono restare Link: niente form (la ricerca
+    // resta l'unico) e niente useState, quindi la rotta funziona senza JS.
+    assert.match(contentsPage, /const pager = totalPages > 1/);
+    assert.match(contentsPage, /pageFor\(currentPage - 1\)/);
+    assert.match(contentsPage, /pageFor\(currentPage \+ 1\)/);
+    const forms = contentsPage.match(/<form/g) ?? [];
+    assert.equal(forms.length, 1, "un solo form di ricerca in Contents");
+  });
+
+  test("cambiare filtro o vista torna alla prima pagina, cambiare pagina no", () => {
+    // linkFor costruisce il contesto di filtro (reset a pagina 1)...
+    assert.doesNotMatch(contentsPage, /const linkFor[\s\S]{0,400}?sp\.set\("page"/);
+    // ...mentre pageFor conserva stato e ricerca e cambia solo il paging.
+    assert.match(contentsPage, /const pageFor = \(n: number\)/);
+    assert.match(contentsPage, /if \(n > 1\) sp\.set\("page", String\(n\)\)/);
+  });
+
+  test("la pagina richiesta viene limitata all'ultima esistente", () => {
+    assert.match(contentsPage, /Math\.min\(page, totalPages\)/);
+    assert.match(contentsPage, /Math\.max\(1, Math\.ceil\(total \/ PAGE_SIZE\)\)/);
+  });
+});
+
+describe("I filtri sono globali e non reintroducono REVIEW", () => {  test("i conteggi vengono da countsByStatus, non dal dataset filtrato", () => {
     assert.match(contentsPage, /countsByStatus\(\)/);
     assert.match(contentsPage, /<StatusFilterBar[\s\S]*counts=\{counts\}/);
     assert.doesNotMatch(

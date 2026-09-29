@@ -1,8 +1,9 @@
-import { test, describe, beforeEach, after } from "node:test";
+import { test, describe, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { prisma } from "../src/lib/prisma";
+import { createJobOwnership } from "./helpers/aijob-ownership";
 import { createContentTool } from "../src/lib/ai/tools/content";
 import { generateImageTool } from "../src/lib/ai/tools/generation";
 import { getContent, deleteContent } from "../src/lib/services/content";
@@ -95,15 +96,29 @@ beforeEach(() => {
   setImageProvider(new FakeImageProvider());
 });
 
+/**
+ * Gli AIJob delle pipeline nascono senza `Content.contentId`: `recordJob` li
+ * crea col solo `input`, e quando la pipeline genera la caption del contenuto
+ * che sta per nascere quell'id non esiste ancora. La proprietà e il criterio
+ * di pulizia sono nel helper condiviso: mai una finestra temporale.
+ */
+const jobOwnership = createJobOwnership(["CAPTION", "HASHTAGS", "IMAGE"]);
+
+before(async () => {
+  await jobOwnership.capture();
+});
+
 after(async () => {
   setImageProvider(null);
+  // Prima dei contenuti: `deleteContent` azzera `contentId` (SetNull) e da quel
+  // momento non si saprebbe più di quale contenuto erano.
+  await jobOwnership.deleteOwned(createdIds);
   for (const id of createdAssetIds.splice(0)) {
     await prisma.contentAsset.delete({ where: { id } }).catch(() => {});
   }
   for (const id of createdIds.splice(0)) {
     await deleteContent(id).catch(() => {});
   }
-  await prisma.aIJob.deleteMany({ where: { createdAt: { gte: new Date(Date.now() - 3600_000) } } }).catch(() => {});
   await prisma.$disconnect();
 });
 
@@ -321,10 +336,14 @@ describe("Il prompt del visual è ancorato al topic", () => {
     assert.match(agent, /topic: argomento esatto chiesto/);
     assert.match(agent, /parlano solo di quello, senza altre destinazioni/);
     assert.match(agent, /senza destinazioni o prodotti non richiesti/);
+    // Il divieto di generazione automatica vale per il ramo senza catalogo.
+    // Il Catalog Flow materializza invece il visuale, e il prompt lo dichiara:
+    // se sparisse questa seconda riga, il prompt direbbe due cose opposte.
     assert.match(
       agent,
-      /createContent non genera mai immagini: il DRAFT nasce senza visual e si completa dalla Media Library/
+      /Senza catalogo createContent NON genera immagini: il DRAFT resta senza visual e si completa dalla Media Library/
     );
+    assert.match(agent, /Con "fromCatalog": true il visuale è già pronto/);
   });
 
   test("createContent non chiama più ensureContentVisual", () => {

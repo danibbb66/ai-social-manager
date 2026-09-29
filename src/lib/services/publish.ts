@@ -1,3 +1,4 @@
+import type { ContentStatus, Platform } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { getContentOrThrow } from "@/lib/services/content";
@@ -173,5 +174,134 @@ export async function publishContent(
     ok: false,
     message: `Pubblicazione fallita: ${resultsSummary}`,
     jobId: job.id,
+  };
+}
+
+export interface UnpublishResult {
+  ok: boolean;
+  /** `false` quando non c'era una pubblicazione attiva: nessuna riga scritta. */
+  changed: boolean;
+  contentId: string;
+  platform: Platform;
+  /** L'id del post rimosso, conservato per l'audit. */
+  removedExternalId: string | null;
+  status: ContentStatus;
+  message: string;
+}
+
+/**
+ * Riallinea il DB a una pubblicazione social cancellata FUORI dall'app.
+ *
+ * Il post è davvero uscito (ne resta il job `PUBLISH SUCCESS` con il suo
+ * `externalId`), ma è stato rimosso a mano su Instagram o Facebook: da quel
+ * momento il DB racconterebbe una pubblicazione che non esiste più.
+ *
+ * Cosa fa, e cosa NON fa per principio:
+ *   - azzera `externalId` e `publishedAt` SOLO sulla piattaforma indicata:
+ *     le altre piattaforme del contenuto restano intatte;
+ *   - NON cancella l'`AIJob` del publish: quello storico è la prova che il post
+ *     è uscito, e deve restare consultabile;
+ *   - NON crea una nuova `Approval`. Se il contenuto torna `APPROVED` è perché
+ *     l'approvazione esistente è ancora valida, non perché ne sia nata una
+ *     nuova: per questo il passaggio non passa da DRAFT e non aggira il divieto
+ *     di `changeStatus` sull'ingresso in APPROVED;
+ *   - NON chiama le API di Meta. La rimozione è già avvenuta, questo servizio
+ *     si limita a riallineare lo stato locale.
+ *
+ * Idempotente: senza `externalId` non c'è una pubblicazione attiva da togliere,
+ * quindi non scrive nulla e non genera un secondo evento di rimozione.
+ *
+ * @param reason Motivo della rimozione. Va nell'audit: senza un motivo
+ *   verificabile il riallineamento non è controllabile.
+ */
+export async function unpublishContent(
+  contentId: string,
+  platform: Platform,
+  reason: string
+): Promise<UnpublishResult> {
+  const content = await getContentOrThrow(contentId);
+
+  const target = content.platforms.find((p) => p.platform === platform);
+  if (!target) {
+    throw new Error(
+      `Il contenuto ${contentId} non ha la piattaforma ${platform}: non c'è una pubblicazione da rimuovere.`
+    );
+  }
+
+  const rawReason = typeof reason === "string" ? reason.trim() : "";
+  const cleanReason = redactSecrets(rawReason);
+  if (!cleanReason) {
+    throw new Error(
+      "Indica il motivo della rimozione (reason): senza motivo l'audit non è verificabile."
+    );
+  }
+
+  if (target.externalId === null) {
+    return {
+      ok: true,
+      changed: false,
+      contentId,
+      platform,
+      removedExternalId: null,
+      status: content.status,
+      message: `Nessuna pubblicazione attiva su ${platform}: nessuna modifica eseguita.`,
+    };
+  }
+
+  const removedExternalId = target.externalId;
+
+  const nextStatus = await prisma.$transaction(
+    async (tx) => {
+      await tx.contentPlatform.update({
+        where: { contentId_platform: { contentId, platform } },
+        data: { externalId: null, publishedAt: null },
+      });
+
+      // Un contenuto è "pubblicato" se almeno una piattaforma conserva un
+      // riferimento a un post realmente uscito. Se non ne resta nessuna, torna
+      // APPROVED, che è lo stato che l'approvazione già valida copre.
+      const remaining = await tx.contentPlatform.findMany({
+        where: { contentId },
+        select: { externalId: true, publishedAt: true },
+      });
+      const stillLive = remaining.some(
+        (p) => p.externalId !== null || p.publishedAt !== null
+      );
+
+      let status: ContentStatus = content.status;
+      if (!stillLive && content.status === "PUBLISHED") {
+        // Stessa regola del gate di pubblicazione: serve l'Approval APPROVED
+        // reale. Si interroga qui, e non con `hasExplicitApproval` (che usa la
+        // connessione globale), perché il controllo deve stare nella stessa
+        // transazione dello stato che protegge. Senza approvazione esplicita il
+        // contenuto resta com'era: non si promuove a APPROVED nessuno.
+        const explicitApprovals = await tx.approval.count({
+          where: { contentId, decision: "APPROVED" },
+        });
+        if (explicitApprovals > 0) status = "APPROVED";
+      }
+
+      if (status !== content.status) {
+        await tx.content.update({ where: { id: contentId }, data: { status } });
+      }
+      return status;
+    },
+    { timeout: 15_000 }
+  );
+
+  await logAudit("CONTENT_UNPUBLISHED", "Content", contentId, {
+    platform,
+    removedExternalId,
+    reason: cleanReason,
+  });
+
+  return {
+    ok: true,
+    changed: true,
+    contentId,
+    platform,
+    removedExternalId,
+    status: nextStatus,
+    message: `Rimossa la pubblicazione su ${platform} (${removedExternalId}). Stato del contenuto: ${nextStatus}.`,
   };
 }

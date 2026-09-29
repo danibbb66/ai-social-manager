@@ -1,4 +1,4 @@
-import { test, before, after } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,6 +12,8 @@ import {
   deleteContent,
   getContent,
   updateContent,
+  listContents,
+  countContents,
 } from "../src/lib/services/content";
 import { moveContentOnCalendar, getCalendar } from "../src/lib/services/calendar";
 import { hasExplicitApproval, getPendingApprovals, getApprovalState } from "../src/lib/services/approvals";
@@ -189,6 +191,22 @@ test("scheduleContent rifiuta data nel passato", async () => {
   const c = await makeDraft("[TEST] no past date");
   await approveContent(c.id);
   await assert.rejects(scheduleContent(c.id, pastDate()), /passato/i);
+});
+
+test("SCHEDULED senza Approval esplicita non è programmabile", async () => {
+  const c = await makeDraft("[TEST] schedule senza approval");
+  // Bypass lato database: stato APPROVED senza record Approval.
+  await prisma.content.update({ where: { id: c.id }, data: { status: "APPROVED" } });
+
+  await assert.rejects(
+    scheduleContent(c.id, futureDate()),
+    /approvazione esplicita/i,
+    "programmare senza Approval creerebbe una coda che non può mai essere pubblicata"
+  );
+
+  const kept = await getContent(c.id);
+  assert.equal(kept?.status, "APPROVED", "resta dov'è, senza finire in coda");
+  assert.equal(kept?.scheduledDate, null);
 });
 
 test("PUBLISHED raggiungibile solo con approvazione esplicita", async () => {
@@ -399,4 +417,66 @@ test("gli audit storici che contengono REVIEW non vengono toccati", async () => 
   for (const a of withReview.slice(0, 5)) {
     assert.ok(JSON.stringify(a.detail).includes("REVIEW"));
   }
+});
+
+describe("La paginazione di /contents copre tutto senza buchi né duplicati", () => {
+  const PAGE = 3;
+  /** Termine univoco: isola questi contenuti dal resto del database. */
+  const tag = "[TEST] paging";
+
+  before(async () => {
+    for (let i = 0; i < 7; i++) {
+      const c = await createContent({
+        title: `${tag} ${i}`,
+        caption: "Caption di test",
+        platforms: ["INSTAGRAM"],
+      });
+      createdIds.push(c.id);
+    }
+  });
+
+  test("countContents e listContents applicano lo stesso filtro", async () => {
+    const count = await countContents({ search: tag, status: "DRAFT" });
+    const all = await listContents({ search: tag, status: "DRAFT", limit: 100 });
+    assert.equal(count, 7);
+    assert.equal(all.length, count, "conteggio e dataset filtrato devono concordare");
+  });
+
+  test("le pagine successive ricostruiscono l'elenco completo, senza ripetizioni", async () => {
+    const expected = (await listContents({ search: tag, status: "DRAFT", limit: 100 })).map(
+      (c) => c.id
+    );
+    assert.equal(expected.length, 7);
+
+    const seen: string[] = [];
+    const total = await countContents({ search: tag, status: "DRAFT" });
+    const totalPages = Math.ceil(total / PAGE);
+    for (let p = 0; p < totalPages; p++) {
+      const chunk = await listContents({
+        search: tag,
+        status: "DRAFT",
+        limit: PAGE,
+        offset: p * PAGE,
+      });
+      assert.ok(chunk.length <= PAGE, "una pagina non può superare il limite");
+      seen.push(...chunk.map((c) => c.id));
+    }
+
+    assert.deepEqual(
+      [...seen].sort(),
+      [...expected].sort(),
+      "ogni contenuto deve comparire una e una sola volta su tutte le pagine"
+    );
+    assert.equal(new Set(seen).size, seen.length, "nessun contenuto può comparire due volte");
+  });
+
+  test("un offset oltre la fine restituisce una pagina vuota, non un errore", async () => {
+    const empty = await listContents({ search: tag, status: "DRAFT", limit: PAGE, offset: 999 });
+    assert.deepEqual(empty, []);
+  });
+
+  test("il filtro di ricerca resta applicato a ogni pagina", async () => {
+    const chunk = await listContents({ search: "pagina-che-non-esiste", limit: PAGE });
+    assert.deepEqual(chunk, [], "la ricerca non deve perdersi con l'offset");
+  });
 });

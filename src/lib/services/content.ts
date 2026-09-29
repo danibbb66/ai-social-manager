@@ -7,6 +7,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { canTransition } from "@/lib/status";
 import { logAudit } from "@/lib/audit";
+import { deleteUploadedFile } from "@/lib/uploads";
 
 export type ContentPlatformInput = Platform[];
 
@@ -116,14 +117,23 @@ function parseJsonArray(value: unknown): string[] {
   return [];
 }
 
-export async function listContents(opts?: {
+/** Filtri condivisi da `listContents` e `countContents`. */
+export interface ContentListFilters {
   status?: ContentStatus | ContentStatus[];
   type?: ContentType;
   search?: string;
   from?: Date;
   to?: Date;
-  limit?: number;
-}): Promise<ContentWithRelations[]> {
+}
+
+/**
+ * Filtro in un unico posto.
+ *
+ * `listContents` e `countContents` devono applicare esattamente lo stesso
+ * filtro: se divergessero, la paginazione contrasterebbe elementi che la
+ * pagina non mostra (buchi e duplicati a cavallo delle pagine).
+ */
+function contentWhere(opts?: ContentListFilters): Prisma.ContentWhereInput {
   const where: Prisma.ContentWhereInput = {};
   if (opts?.status) {
     where.status = Array.isArray(opts.status)
@@ -145,13 +155,27 @@ export async function listContents(opts?: {
       ...(opts.to ? { lte: opts.to } : {}),
     };
   }
+  return where;
+}
 
+export async function listContents(
+  opts?: ContentListFilters & { limit?: number; offset?: number }
+): Promise<ContentWithRelations[]> {
   return prisma.content.findMany({
-    where,
+    where: contentWhere(opts),
     include: contentInclude,
-    orderBy: [{ scheduledDate: "asc" }, { createdAt: "desc" }],
+    // `id` è il criterio di spareggio finale: senza un ordinamento totalmente
+    // deterministico due pagine consecutive con lo stesso `scheduledDate` e
+    // `createdAt` possono mostrare due volte lo stesso contenuto o saltarne uno.
+    orderBy: [{ scheduledDate: "asc" }, { createdAt: "desc" }, { id: "asc" }],
     take: opts?.limit ?? 200,
+    ...(opts?.offset ? { skip: opts.offset } : {}),
   });
+}
+
+/** Quanti contenuti soddisfano i filtri: serve a calcolare le pagine. */
+export async function countContents(opts?: ContentListFilters): Promise<number> {
+  return prisma.content.count({ where: contentWhere(opts) });
 }
 
 export async function getContent(id: string): Promise<ContentWithRelations | null> {
@@ -456,6 +480,23 @@ export async function scheduleContent(
   }
   assertContentReadyForPublishPath(content);
 
+  // Stessa regola del gate di pubblicazione: serve l'approvazione esplicita,
+  // non basta lo stato. Un contenuto APPROVED senza record Approval è solo un
+  // bypass lato database, e programmarlo creerebbe un contenuto in coda che
+  // nessuno potrà mai pubblicare.
+  //
+  // La regola vive in `services/approvals.ts` (`hasExplicitApproval`), che
+  // importa da questo file: qui si interroga direttamente per non creare un
+  // ciclo di import fra i due moduli.
+  const explicitApprovals = await prisma.approval.count({
+    where: { contentId: id, decision: "APPROVED" },
+  });
+  if (explicitApprovals === 0) {
+    throw new Error(
+      "Programmazione rifiutata: il contenuto non ha un'approvazione esplicita."
+    );
+  }
+
   const updated = await prisma.content.update({
     where: { id },
     data: { status: "SCHEDULED", scheduledDate },
@@ -533,8 +574,39 @@ export async function duplicateContent(id: string): Promise<ContentWithRelations
   return duplicated;
 }
 
+/**
+ * Cancella i file locali che appartenevano a un contenuto eliminato.
+ *
+ * Senza questo passo la cancellazione del record lascia in `/public/uploads` un
+ * file orfano per ogni contenuto con visual: la riga `ContentAsset` sparisce
+ * con il cascade, il file resta e non è più raggiungibile da nessuna parte.
+ *
+ * Un file non viene mai cancellato se un altro asset lo usa ancora: duplicare
+ * un contenuto copia le righe asset senza copiare il file, quindi due
+ * contenuti possono condividere lo stesso upload. Un file già assente non è
+ * un errore e `deleteUploadedFile` rifiuta comunque qualsiasi url fuori da
+ * `/uploads/<cartella>/<file>`.
+ */
+async function removeContentUploadFiles(urls: (string | null | undefined)[]): Promise<void> {
+  for (const url of new Set(urls.filter((u): u is string => typeof u === "string"))) {
+    if (await prisma.contentAsset.count({ where: { url } })) continue;
+    await deleteUploadedFile(url).catch(() => false);
+  }
+}
+
 export async function deleteContent(id: string): Promise<void> {
+  const owned = await prisma.content.findUnique({
+    where: { id },
+    select: {
+      assets: { select: { url: true } },
+      slides: { select: { imageUrl: true } },
+    },
+  });
   await prisma.content.delete({ where: { id } });
+  await removeContentUploadFiles([
+    ...(owned?.assets.map((a) => a.url) ?? []),
+    ...(owned?.slides.map((s) => s.imageUrl) ?? []),
+  ]);
   await logAudit("CONTENT_DELETED", "Content", id, {});
 }
 

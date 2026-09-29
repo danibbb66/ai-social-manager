@@ -140,6 +140,51 @@ describe("publishContent (guardie di sicurezza)", () => {
     );
   });
 
+  test("4b) rifiuta la pubblicazione di un contenuto senza testo", async () => {
+    // Anche con APPROVED, Approval esplicita e confirm=true: senza caption
+    // non esiste un post da pubblicare, e la richiesta non deve nemmeno
+    // arrivare al provider.
+    let providerCalled = false;
+    stubFetch(async () => {
+      providerCalled = true;
+      return jsonResponse({ id: "non-deve-accadere" });
+    });
+
+    const c = await createContent({
+      title: "[TEST] publish senza caption",
+      caption: "Testo presente al momento dell'approvazione",
+      platforms: ["FACEBOOK"],
+    });
+    createdIds.push(c.id);
+    await approveContent(c.id);
+
+    // Lo stato resta APPROVED ma il testo sparisce (bypass lato DB): il guard
+    // di pubblicazione deve comunque fermare tutto prima del provider.
+    await prisma.content.update({
+      where: { id: c.id },
+      data: { status: "APPROVED", caption: "" },
+    });
+
+    await assert.rejects(
+      publishContent(c.id, "FACEBOOK", { confirm: true }),
+      /testo|caption/i
+    );
+    assert.equal(providerCalled, false, "senza testo il provider non deve essere chiamato");
+  });
+
+  test("4c) l'approvazione rifiuta un contenuto con caption vuota", async () => {
+    const c = await createContent({
+      title: "[TEST] approve senza caption",
+      caption: "   ",
+      platforms: ["FACEBOOK"],
+    });
+    createdIds.push(c.id);
+
+    await assert.rejects(approveContent(c.id), /caption/i);
+    const kept = await getContent(c.id);
+    assert.equal(kept?.status, "DRAFT", "resta in DRAFT finché non c'è un testo");
+  });
+
   test("5) con APPROVED + confirm=true esegue il provider e pubblica", async () => {
     stubFetch(async (input) => {
       assert.match(String(input), /\/feed/);

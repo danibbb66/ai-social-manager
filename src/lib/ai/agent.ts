@@ -25,15 +25,24 @@ interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
+/**
+ * Perché l'output del modello non è un envelope utilizzabile.
+ *
+ * - `non_json`: non è JSON. Prose libera, oppure JSON troncato o che non
+ *   contiene un oggetto `{...}` estraibile.
+ * - `schema_invalid`: è JSON valido ma non è l'envelope: nessuna `message`
+ *   utilizzabile e nessuna tool call riconoscibile (es. `{}`).
+ */
+type EnvelopeIssue = "non_json" | "schema_invalid";
+
 interface ParsedAgentReply {
   toolCalls: ToolCall[];
   message?: string;
   /**
-   * Il modello ha risposto con un JSON valido ma non utilizzabile:
-   * nessuna tool call riconoscibile e nessun `message` (es. `{}`).
-   * In questo caso non si deve mai mostrare il JSON grezzo all'utente.
+   * Presente solo quando l'output non è un envelope valido. In quel caso
+   * `message` non c'è: l'output non diventa mai una risposta per l'utente.
    */
-  malformed: boolean;
+  issue?: EnvelopeIssue;
 }
 
 /** Chiavi con cui il modello può aver nominato i parametri di una singola call. */
@@ -117,11 +126,27 @@ function parseToolCalls(obj: Record<string, unknown>): ToolCall[] {
   return calls;
 }
 
+/**
+ * Classifica l'output del modello.
+ *
+ * Un envelope è valido in due casi, e solo due:
+ * 1. contiene almeno una tool call riconoscibile (schema moderno o envelope
+ *    legacy): viene eseguito, come prima;
+ * 2. non ha tool call ma ha un `message` non vuoto: è la risposta finale.
+ *
+ * Tutto il resto non è un envelope: `non_json` (prosa, JSON troncato) o
+ * `schema_invalid` (JSON valido senza `message` e senza tool call). Prima
+ * invece la prosa libera diventava la risposta finale mostrata all'utente,
+ * mentre il modello non aveva eseguito nulla.
+ */
 function parseAgentReply(raw: string): ParsedAgentReply {
   const json = tryParseJson(raw);
-  if (!json || typeof json !== "object" || Array.isArray(json)) {
-    // testo libero del modello: risposta finale valida
-    return { toolCalls: [], message: raw.trim(), malformed: false };
+  if (!json) {
+    return { toolCalls: [], issue: "non_json" };
+  }
+  if (typeof json !== "object" || Array.isArray(json)) {
+    // JSON valido (per esempio un array) ma non l'oggetto envelope
+    return { toolCalls: [], issue: "schema_invalid" };
   }
   const obj = json as Record<string, unknown>;
   const toolCalls = parseToolCalls(obj);
@@ -129,7 +154,10 @@ function parseAgentReply(raw: string): ParsedAgentReply {
     typeof obj.message === "string" && obj.message.trim()
       ? obj.message.trim()
       : undefined;
-  return { toolCalls, message, malformed: toolCalls.length === 0 && !message };
+  if (toolCalls.length === 0 && !message) {
+    return { toolCalls, issue: "schema_invalid" };
+  }
+  return { toolCalls, message };
 }
 
 export const SYSTEM_PROMPT = `## RUOLO
@@ -138,6 +166,7 @@ Usi tool reali sui dati: se un tool risponde ok:false riporta il suo messaggio, 
 
 ## REGOLA PRINCIPALE
 Individua l'azione richiesta, poi usa il tool che la completa direttamente. Non usare tool intermedi.
+Non usare mai la tua memoria sul catalogo: non dire che una destinazione non c'è e non dire che hai trovato una proposta senza aver chiamato searchCatalog in questo turno. Se non sei sicuro, chiama searchCatalog.
 
 ## CREAZIONE CONTENUTI
 Usa createContent quando l'utente chiede di creare un post, un reel, un contenuto, di preparare un post o un contenuto da pubblicare.
@@ -145,17 +174,19 @@ Usa createContent quando l'utente chiede di creare un post, un reel, un contenut
 - topic: argomento esatto chiesto (es. "proposta Calabria"). È un VINCOLO: copy, hashtag e immagine parlano solo di quello, senza altre destinazioni.
 - platforms: array con le piattaforme richieste ["INSTAGRAM","FACEBOOK"], mai stringa.
 - type: "POST" o "VIDEO". Carousel: createCarousel.
-createContent produce il DRAFT completo di testo e piattaforme, ma NON immagini: resta senza visual.
+createContent produce il DRAFT completo. Con "fromCatalog": true nasce anche con il visuale (vedi CATALOGO); senza catalogo, cioè solo "topic", resta senza visual.
 Chiamalo una sola volta per richiesta, poi chiudi il turno e rispondi all'utente.
 NON usare generateCaption o generateHashtags come passaggi intermedi.
 
 ## CATALOGO
 Il Catalogo Agenzia è la fonte di verità per i post: contiene solo proposte realmente pubblicate sul sito, con la loro provenienza.
-- Post su una destinazione: prima searchCatalog con "query", poi createContent con "fromCatalog": true e "destination" (o "catalogProposalId" dalla ricerca).
-- La destinazione non è nel catalogo: NON creare il DRAFT, non inventare l'offerta e non usare conoscenze tue. Dillo all'utente e proponi un'altra destinazione o l'aggiornamento del Catalogo.
+- Post su una destinazione: SEMPRE prima searchCatalog con "query", anche se la destinazione ti sembra conosciuta, poi createContent con "fromCatalog": true e "destination" (o "catalogProposalId" dalla ricerca).
+- La destinazione non è nel catalogo: NON creare il DRAFT, non inventare l'offerta e non usare conoscenze tue. Dillo all'utente e proponi un'altra destinazione o l'aggiornamento del Catalogo. Prima di dirlo devi aver chiamato searchCatalog in questo turno e aver visto zero risultati per quella destinazione.
 - L'utente non ha indicato una destinazione: createContent con "fromCatalog": true sceglie da sola una proposta già presente.
 - Il catalogo è vuoto: nessun DRAFT, spiega che il Catalogo va importato.
 - Dati commerciali assenti in una proposta: la copy non cita prezzi, date, durata o servizi. Non scegliere il formato OFFER senza quei dati.
+- Il DRAFT di catalogo nasce completo: il visuale usa l'immagine ufficiale della proposta quando è valida, altrimenti viene generato dal provider immagini configurato. Non chiamare generateImage per completarlo: è già fatto.
+- Se il visuale non si può materializzare non viene creato alcun DRAFT e createContent risponde ok:false con il motivo. Non riprovare a crearlo e non offrire un post senza immagine: riferisci il problema all'utente.
 
 ## GENERAZIONE PARZIALE
 - generateCaption solo su richiesta esplicita di caption o testo.
@@ -169,8 +200,8 @@ createIdea per idee, spunti o proposte da salvare. Non usarlo se l'utente chiede
 I contentId servono solo per contenuti già esistenti. Non inventarli: se manca, chiedilo o usa listContents.
 
 ## VISUAL
-createContent non genera mai immagini: il DRAFT nasce senza visual e si completa dalla Media Library.
-Genera un'immagine con generateImage solo se l'utente la chiede esplicitamente. Per i VIDEO usa generateVideo.
+Con "fromCatalog": true il visuale è già pronto: non generarne un altro e non chiamare generateImage.
+Senza catalogo createContent NON genera immagini: il DRAFT resta senza visual e si completa dalla Media Library. Genera un'immagine con generateImage solo se l'utente la chiede esplicitamente. Per i VIDEO usa generateVideo.
 Il visual deve essere coerente con il topic, senza destinazioni o prodotti non richiesti.
 
 ## PIATTAFORME
@@ -208,17 +239,37 @@ export const AGENT_ENVELOPE_SCHEMA = buildAgentEnvelopeSchema(toolSchemaVariants
 
 const MAX_ROUNDS = 6;
 const HISTORY_LIMIT = 24;
-/** Budget massimo di caratteri per i tool result passati al modello (evita context overflow) */
-const TOOL_BUDGET = 6000;
+/** Prefisso diagnostico (troncato) dell'output non conforme, solo se AI_DEBUG=1. */
+const INVALID_PREVIEW = 200;
+/**
+ * Limite di caratteri per un singolo tool result passato al modello.
+ *
+ * Il context overflow non nasce solo dal prompt iniziale: a ogni round il
+ * prompt cresce di un envelope + un risultato per tool chiamato, e un
+ * `searchCatalog` può portare 8 proposte. 6.000 caratteri per risultato
+ * bastavano a far esplodere il contesto già dal secondo round.
+ */
+export const TOOL_RESULT_MAX = 1200;
+
+/**
+ * Limite cumulativo dei tool result accumulati nello stesso round.
+ *
+ * Deterministico: ogni chiamata riceve il minore fra `TOOL_RESULT_MAX` e il
+ * budget residuo del round, e i dati già spesi non si recuperano. Il tetto
+ * può quindi essere superato dalle sole teste (`ok`/`errore` + `message`),
+ * che per costruzione non vengono mai compresse.
+ */
+export const TOOL_ROUND_BUDGET = 2400;
 /** Budget massimo per i messaggi di cronologia passati al modello */
 const HISTORY_BUDGET = 14000;
 
 /**
  * Istruzione usata per l'unico retry consentito quando il modello risponde con
- * un envelope non utilizzabile (JSON valido senza `message` e senza tool call,
- * es. `{}`). Non crea loop: viene inviata al massimo una volta per esecuzione.
+ * un output non utilizzabile: prosa non JSON, JSON troncato, oppure JSON valido
+ * senza `message` e senza tool call (es. `{}`). Non crea loop: viene inviata al
+ * massimo una volta per esecuzione e con lo stesso schema dell'agent.
  */
-const ENVELOPE_RETRY_INSTRUCTION = `La tua risposta precedente non era utilizzabile: conteneva un JSON senza il campo "message" e senza una "tool_calls" valida, quindi non ho eseguito nulla.
+const ENVELOPE_RETRY_INSTRUCTION = `La tua risposta precedente non era utilizzabile: non conteneva un envelope valido (un solo oggetto JSON con "message" e "tool_calls"), quindi non ho eseguito nulla.
 Rispondi di nuovo con UN SOLO oggetto JSON valido, senza testo attorno, con questo schema esatto:
 {"message": "testo in italiano per l'utente", "tool_calls": [{"name": "nome_del_tool", "arguments": {}}]}
 - "message": testo in italiano, sempre presente anche se esegui un tool.
@@ -266,22 +317,49 @@ function debugLog(step: string, detail: string): void {
   console.log(`[ai:debug] ${step} ${detail}`);
 }
 
-/** Trasforma un esito tool in un testo compatto (senza dati interni). */
-function compactToolResult(result: { ok: boolean; message: string; data?: unknown }): string {
-  let text = `${result.ok ? "ok" : "errore"}: ${result.message}`;
-  if (result.data !== undefined) {
-    const dataText =
-      typeof result.data === "string" ? result.data : (() => {
-        try {
-          return JSON.stringify(result.data);
-        } catch {
-          return "";
-        }
-      })();
-    const budget = TOOL_BUDGET - text.length;
-    text += dataText ? ` data=${budget > 10 ? dataText.slice(0, budget) : dataText.slice(0, 10)}` : "";
-  }
-  return text;
+/** Prefisso con cui i dati strutturati seguono esito e messaggio. */
+const TOOL_DATA_PREFIX = " data=";
+
+/**
+ * Testo compatto di un esito tool, entro `max` caratteri.
+ *
+ * Ordine delle regole, deterministico:
+ * 1. `ok`/`errore` e `message` non si comprimono mai. Sono l'unica cosa che il
+ *    modello usa per decidere, quindi il tetto può ridurre solo i dati: se il
+ *    messaggio da solo supera `max`, resta intero e il testo supera il limite.
+ * 2. Il codice di un esito bloccato resta leggibile subito dopo l'esito.
+ * 3. I dati si troncano dall'inizio, dove stanno gli identificativi (id, nome,
+ *    stato, formato): nei tool reali le chiavi che servono a decidere vengono
+ *    prima e caption e metadati dopo.
+ * 4. Sotto soglia il testo è identico a quello non compresso.
+ */
+export function compactToolResult(
+  result: { ok: boolean; message: string; code?: string; data?: unknown },
+  max = TOOL_RESULT_MAX
+): string {
+  const status = result.ok ? "ok" : "errore";
+  const head = result.code
+    ? `${status}[${result.code}]: ${result.message}`
+    : `${status}: ${result.message}`;
+  if (result.data === undefined) return head;
+
+  const dataText =
+    typeof result.data === "string"
+      ? result.data
+      : (() => {
+          try {
+            return JSON.stringify(result.data);
+          } catch {
+            return "";
+          }
+        })();
+  if (!dataText) return head;
+
+  const room = Math.max(max, head.length) - head.length - TOOL_DATA_PREFIX.length;
+  if (room <= 0) return head;
+  if (dataText.length <= room) return `${head}${TOOL_DATA_PREFIX}${dataText}`;
+  // il "…" sta dentro il tetto: room caratteri di dati, non room + 1
+  return `${head}${TOOL_DATA_PREFIX}${dataText.slice(0, room - 1)}…`;
 }
 
 /** Messaggio d'errore mostrato all'utente: non espone dettagli interni non necessari. */
@@ -320,7 +398,12 @@ export async function runAgent(opts: {
 
   const provider = getAiProvider();
   const executed: { name: string; args: unknown; label: string; ok: boolean }[] = [];
-  /** Un solo retry per esecuzione: nessun loop di insistenza sul modello. */
+  /**
+   * Un solo retry per esecuzione quando l'output non è un envelope valido:
+   * nessun loop di insistenza sul modello. Il retry avviene solo con zero tool
+   * call già eseguite, quindi non può duplicare tool, DRAFT o asset, e non
+   * viene persistito in chat.
+   */
   let envelopeRetried = false;
   /** Contenuto già creato in questo run: rende bloccabili i duplicati. */
   let createdContent: { id: string; message: string } | null = null;
@@ -358,6 +441,11 @@ export async function runAgent(opts: {
         });
         raw = completion.text;
         debugLog(
+          "tokens",
+          `round=${round + 1} prompt=${completion.promptEvalCount ?? "?"} ` +
+            `generated=${completion.evalCount ?? "?"}`
+        );
+        debugLog(
           "raw",
           `round=${round + 1} model=${provider.model} len=${raw.length} ${JSON.stringify(raw.slice(0, RAW_PREVIEW))}`
         );
@@ -389,18 +477,31 @@ export async function runAgent(opts: {
       debugLog(
         "parsed",
         `round=${round + 1} calls=[${calls.map((c) => c.name).join(",")}] ` +
-          `message=${JSON.stringify(parsed.message ?? null)} malformed=${parsed.malformed}`
+          `message=${JSON.stringify(parsed.message ?? null)} issue=${parsed.issue ?? "none"}`
       );
 
+      if (parsed.issue) {
+        // Output non conforme: mai una risposta per l'utente. Si registra il
+        // motivo (non_json / schema_invalid), la lunghezza e un prefisso
+        // diagnostico troncato, senza loggare l'output completo.
+        debugLog(
+          "invalid",
+          `round=${round + 1} reason=${parsed.issue} len=${raw.length} ` +
+            `preview=${JSON.stringify(raw.slice(0, INVALID_PREVIEW))}`
+        );
+      }
+
       if (calls.length === 0) {
-        // Envelope non utilizzabile (es. `{}`): mai mostrare il JSON grezzo.
-        // Si concede un solo retry chiedendo esplicitamente l'envelope corretto.
-        if (parsed.malformed && !envelopeRetried && round < MAX_ROUNDS - 1) {
+        // Envelope non utilizzabile (prosa, JSON troncato, `{}`): mai mostrare
+        // l'output grezzo. Si concede un solo retry chiedendo esplicitamente
+        // l'envelope corretto, con le stesse regole e lo stesso schema.
+        if (parsed.issue && !envelopeRetried && round < MAX_ROUNDS - 1) {
           envelopeRetried = true;
           messages.push({ role: "assistant", content: raw });
           messages.push({ role: "user", content: ENVELOPE_RETRY_INSTRUCTION });
           continue;
         }
+        // Nessuna `message` valida: errore strutturato, non testo del modello.
         const finalText = parsed.message ?? unusableReplyMessage(executed.length);
         await persistAssistant(finalText, undefined);
         emit?.({ type: "final", text: finalText });
@@ -418,6 +519,11 @@ export async function runAgent(opts: {
         name: undefined,
         content: raw,
       });
+
+      // Budget cumulativo dei tool result di QUESTO round: ogni chiamata prende
+      // il minore fra il limite singolo e il residuo, così più tool nello stesso
+      // envelope non fanno crescere il prompt oltre TOOL_ROUND_BUDGET.
+      let roundToolChars = 0;
 
       for (const call of calls) {
         const tool = getTool(call.name);
@@ -485,7 +591,12 @@ export async function runAgent(opts: {
           };
         }
 
-        const content = compactToolResult(result);
+        const limit = Math.max(
+          0,
+          Math.min(TOOL_RESULT_MAX, TOOL_ROUND_BUDGET - roundToolChars)
+        );
+        const content = compactToolResult(result, limit);
+        roundToolChars += content.length;
         messages.push({ role: "tool", name: call.name, content });
         try {
           await addMessages(conversationId, [

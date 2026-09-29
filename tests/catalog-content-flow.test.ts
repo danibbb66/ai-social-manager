@@ -1,10 +1,14 @@
 import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import fs from "node:fs/promises";
 import { join } from "node:path";
 import { prisma } from "../src/lib/prisma";
 import { runAgent, SYSTEM_PROMPT, type AgentStreamEvent } from "../src/lib/ai/agent";
 import { setAiProvider } from "../src/lib/ai/factory";
+import { setImageProvider } from "../src/lib/images/factory";
+import { deleteUploadedFile } from "../src/lib/uploads";
+import type { GeneratedImage, ImageProvider, ImageUpload } from "../src/lib/images/provider";
 import type {
   AiChatMessage,
   AiCompletion,
@@ -35,6 +39,7 @@ import {
 import { normalizeForMatch, textMatchesQuery } from "../src/lib/catalog/text";
 
 const REPO_ROOT = join(__dirname, "..");
+const UPLOADS_ROOT = join(REPO_ROOT, "public", "uploads");
 
 /**
  * Catalogo → AI → createContent.
@@ -42,6 +47,12 @@ const REPO_ROOT = join(__dirname, "..");
  * Qui la garanzia centrale è che il post nasca da una proposta reale: se la
  * destinazione non esiste, non si crea niente. La verifica è sul database e
  * sul testo prodotto, non sulle intenzioni del prompt.
+ *
+ * Da quando il visuale è parte del DRAFT, le tre proposte di test hanno tutte
+ * un'immagine ufficiale: la rete è sostituita da uno stub di `fetch` e il
+ * provider immagini è un finto che, se qualcuno lo chiama, si rifiuta. Qui il
+ * punto è la provenienza della copy, non la materializzazione: il percorso
+ * completo del visuale sta in `catalog-visual-tool-flow.test.ts`.
  *
  * I test usano proposte proprie (Testonia, Offerta Reale) invece di quelle
  * vere dell'agenzia: il catalogo reale può essere reimportato in qualsiasi
@@ -75,6 +86,70 @@ const sourceIds: string[] = [];
 let bareId = "";
 let fullId = "";
 let placeholderId = "";
+
+const originalFetch = globalThis.fetch;
+let baselineFiles: string[] = [];
+
+/** WEBP minimo ma reale: il downloader controlla i magic byte. */
+const WEBP = Buffer.concat([
+  Buffer.from("RIFF", "ascii"),
+  Buffer.from([0x1a, 0, 0, 0]),
+  Buffer.from("WEBP", "ascii"),
+  Buffer.from([0, 0, 0, 0]),
+]);
+
+/**
+ * Provider immagini che non può funzionare, e lo dichiara.
+ *
+ * Tutte le proposte di questa suite hanno un'immagine ufficiale, quindi
+ * l'unico risultato corretto è zero chiamate: se il flusso di catalogo
+ *degenerasse in generazione, questi test fallirebbero invece di passare
+ * producendo post con immagini inventate.
+ */
+class ForbiddenImageProvider implements ImageProvider {
+  readonly name = "magnific";
+  canGenerate = true;
+  calls: string[] = [];
+
+  async generateImage(prompt: string): Promise<GeneratedImage> {
+    this.calls.push(prompt);
+    throw new Error("questa suite non deve generare immagini: le proposte hanno un originale");
+  }
+
+  async saveUploadedFile(file: ImageUpload): Promise<GeneratedImage> {
+    this.calls.push(`saveUploadedFile:${file.originalName}`);
+    throw new Error("questa suite non deve caricare file: usa il downloader");
+  }
+}
+
+let imageProvider: ForbiddenImageProvider;
+
+function stubImageFetch(): void {
+  (globalThis as { fetch: unknown }).fetch = async () =>
+    new Response(new Uint8Array(WEBP), {
+      status: 200,
+      headers: { "Content-Type": "image/webp" },
+    });
+}
+
+async function listUploads(): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(dir: string) {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) await walk(full);
+      else out.push(full);
+    }
+  }
+  await walk(UPLOADS_ROOT);
+  return out.sort();
+}
 
 function envelope(calls: { name: string; arguments: Record<string, unknown> }[], message?: string) {
   return JSON.stringify({
@@ -150,6 +225,11 @@ async function draftCount(): Promise<number> {
 }
 
 before(async () => {
+  baselineFiles = await listUploads();
+  imageProvider = new ForbiddenImageProvider();
+  setImageProvider(imageProvider);
+  stubImageFetch();
+
   const source = await prisma.catalogSource.create({
     data: {
       domain: SOURCE_DOMAIN,
@@ -219,9 +299,28 @@ before(async () => {
 });
 
 after(async () => {
+  globalThis.fetch = originalFetch;
+  setImageProvider(null);
   setAiProvider(null);
+
+  // I contenuti di questa suite portano con sé un asset: il file va rimosso
+  // prima che l'asset sparisca con il contenuto, altrimenti `public/uploads`
+  // accumula immagini orfane che nessuno saprebbe più spiegare.
+  const orphans = await prisma.content.findMany({
+    where: { catalogProposalId: { in: [bareId, fullId] } },
+    select: { id: true },
+  });
+  const ids = new Set(contentIds.splice(0));
+  for (const row of orphans) ids.add(row.id);
+  const assets = await prisma.contentAsset.findMany({
+    where: { contentId: { in: [...ids] } },
+    select: { url: true },
+  });
+  for (const asset of assets) {
+    await deleteUploadedFile(asset.url).catch(() => {});
+  }
   // `Set`: lo stesso DRAFT può essere stato registrato da più test.
-  for (const id of new Set(contentIds.splice(0))) {
+  for (const id of ids) {
     await deleteContent(id).catch(() => {});
   }
   for (const id of conversationIds.splice(0)) {
@@ -230,6 +329,12 @@ after(async () => {
   // I contenuti creati dal test che non sono finiti in contentIds.
   await prisma.content.deleteMany({ where: { catalogProposalId: { in: [bareId, fullId] } } });
   await prisma.catalogSource.deleteMany({ where: { id: { in: sourceIds } } });
+
+  const now = await listUploads();
+  for (const f of now.filter((f) => !baselineFiles.includes(f))) {
+    await fs.unlink(f).catch(() => {});
+  }
+  await fs.rmdir(join(UPLOADS_ROOT, "images")).catch(() => {});
   await prisma.$disconnect();
 });
 
@@ -264,6 +369,13 @@ test("1. una destinazione presente nel Catalogo produce esattamente un DRAFT", a
 
   // 2. il DRAFT risale alla proposta giusta
   assert.equal(created.catalogProposalId, bareId, "il DRAFT deve puntare alla proposta");
+  assert.equal(result.data!.withMedia, true, "il DRAFT nasce già con il visuale");
+  const withVisual = await prisma.content.findUnique({
+    where: { id },
+    include: { assets: true },
+  });
+  assert.equal(withVisual!.assets.length, 1, "l'originale del catalogo è il visuale del DRAFT");
+  assert.equal(result.data!.assetId, withVisual!.assets[0].id);
   const linked = await prisma.content.findUnique({
     where: { id },
     include: { catalogProposal: { include: { source: true } } },
@@ -488,7 +600,8 @@ test("7. la direzione visual usa l'immagine ufficiale del catalogo", async () =>
   assert.ok(visual.concept.length > 10 && visual.subject.length > 10);
   assert.ok(visual.composition.length > 10 && visual.mood.length > 10);
 
-  // La direzione viaggia nel risultato del tool: è il contratto del prossimo step.
+  // La direzione viaggia nel risultato del tool, insieme al visuale che ne è
+  // derivato: è il contratto del prossimo step.
   const result = await createContentTool().execute({
     fromCatalog: true,
     destination: BARE_DESTINATION,
@@ -499,14 +612,17 @@ test("7. la direzione visual usa l'immagine ufficiale del catalogo", async () =>
   const visualFromTool = result.data!.visualDirection as { useOfficialImage: boolean; officialImageUrl: string };
   assert.equal(visualFromTool.useOfficialImage, true);
   assert.equal(visualFromTool.officialImageUrl, BARE_IMAGE);
-  assert.equal(result.data!.withMedia, false, "nessuna immagine generata");
-  assert.equal(result.data!.assetId, null);
+  assert.equal(result.data!.visualOrigin, "catalog-official", "il visuale è l'originale del catalogo");
+  assert.equal(result.data!.withMedia, true, "il DRAFT nasce con il visuale");
+  assert.equal(typeof result.data!.assetId, "string");
 
   const draft = await prisma.content.findUnique({
     where: { id },
     include: { assets: true },
   });
-  assert.equal(draft!.assets.length, 0, "nessun asset generato o scaricato");
+  assert.equal(draft!.assets.length, 1, "un solo visuale, quello ufficiale");
+  assert.equal(draft!.assets[0].id, result.data!.assetId);
+  assert.equal(imageProvider.calls.length, 0, "con l'originale non si genera nulla");
 });
 
 test("7b. senza immagine ufficiale la direzione visual chiede una generazione futura", () => {
@@ -798,6 +914,7 @@ test("8b. la selezione è deterministica e preferisce le proposte non ancora usa
 
 test("9. una seconda createContent nello stesso turno resta bloccata", async () => {
   const before = await draftCount();
+  const beforeForProposal = await prisma.content.count({ where: { catalogProposalId: bareId } });
 
   const { toolEvents } = await runScripted("Crea un post per Testonia", [
     envelope([
@@ -817,13 +934,135 @@ test("9. una seconda createContent nello stesso turno resta bloccata", async () 
   assert.equal(creates[0].ok, true, creates[0].error ?? "");
   assert.equal(creates[1].ok, false, "la seconda non viene eseguita");
   assert.match(String(creates[1].error ?? ""), /già creato in questo turno/);
-  assert.equal(await draftCount(), before + 1, "un solo DRAFT per richiesta");
+
+  // Nessun DRAFT in più: il guard ferma la seconda chiamata e la prima, sulla
+  // stessa proposta, riusa il visuale già materializzato invece di duplicarlo.
+  assert.equal(await draftCount(), before, "nessun DRAFT nuovo");
+  assert.equal(
+    await prisma.content.count({ where: { catalogProposalId: bareId } }),
+    beforeForProposal,
+    "una richiesta = un solo DRAFT per proposta"
+  );
 
   const drafts = await prisma.content.findMany({
     where: { catalogProposalId: bareId },
     orderBy: { createdAt: "desc" },
   });
+  assert.equal(drafts.length, 1, "un solo DRAFT per la proposta");
   for (const d of drafts) contentIds.push(d.id);
+});
+
+/* ------------------------------------------------------------------ *
+ * 3d + 9b + 9c. mismatch, due richieste, due contenuti per la stessa proposta
+ * ------------------------------------------------------------------ */
+
+test("3d. destinazione e id di proposta in disaccordo vengono respinti", async () => {
+  const before = await draftCount();
+  // id della proposta Testonia, destinazione di un'altra: non si può creare
+  // "Testonia" usando la proposta della Repubblica, né viceversa.
+  const created = await createContentTool().execute({
+    catalogProposalId: bareId,
+    destination: FULL_DESTINATION,
+    platforms: ["INSTAGRAM"],
+  }) as { ok: boolean; data?: Record<string, unknown> };
+
+  assert.equal(created.ok, false, "il mismatch non deve produrre contenuti");
+  assert.equal(created.data!.catalogFailure, "destination_mismatch");
+  assert.equal(created.data!.createdContentId, null);
+  assert.equal(await draftCount(), before, "nessun DRAFT dal mismatch");
+});
+
+test("3e. la stessa destinazione senza id risolve sempre la stessa proposta", async () => {
+  const { proposals } = await searchCatalogForAi({ query: BARE_DESTINATION });
+  const usable = proposals.filter((p) => p.usable);
+  assert.equal(usable.length, 1, "una sola proposta utilizzabile per Testonia");
+  const resolved = resolveFromProposals(proposals, { destination: BARE_DESTINATION });
+  assert.equal(resolved.ok, true);
+  assert.equal(
+    resolved.ok && resolved.proposal.id,
+    bareId,
+    "la risoluzione deve essere deterministica e puntare alla proposta giusta"
+  );
+});
+
+test("9b. ripetere la stessa proposta riusa il DRAFT esistente invece di duplicarlo", async () => {
+  // Il contratto è l'idempotenza su (proposta + fonte del visuale): la stessa
+  // coppia non riscarica, non rigenera e non crea un secondo contenuto. Non è
+  // una deduplica di intenti: se l'utente vuole due post, serve un secondo
+  // passaggio esplicito (updateContent / nuovo contenuto da altra proposta).
+  const before = await draftCount();
+  const first = await createContentTool().execute({
+    catalogProposalId: bareId,
+    platforms: ["INSTAGRAM"],
+  }) as { ok: boolean; message: string; data?: Record<string, unknown> };
+  const second = await createContentTool().execute({
+    catalogProposalId: bareId,
+    platforms: ["FACEBOOK"],
+  }) as { ok: boolean; message: string; data?: Record<string, unknown> };
+
+  assert.equal(first.ok, true, first.message);
+  assert.equal(second.ok, true, second.message);
+  contentIds.push(String(first.data!.id));
+
+  const created = await draftCount() - before;
+  assert.ok(created <= 1, `il riuso non può creare più di un DRAFT (creati: ${created})`);
+
+  const rows = await prisma.content.findMany({ where: { catalogProposalId: bareId } });
+  assert.equal(rows.length, 1, "un solo DRAFT per la stessa proposta e visuale");
+  const row = rows[0];
+  assert.equal(row!.id, first.data!.id, "la seconda chiamata restituisce lo stesso contenuto");
+  assert.equal(row!.status, "DRAFT");
+
+  // Il riuso deve essere dichiarato, non silenzioso: il modello deve poterlo
+  // riferire all'utente e capire che le piattaforme richieste non ci sono.
+  const reusedFlag = Boolean(second.data!.visualReused);
+  const secondId = String(second.data!.id);
+  if (secondId === row!.id) {
+    assert.equal(reusedFlag, true, "il riuso va dichiarato in visualReused");
+    assert.match(second.message, /riutilizzato/);
+    assert.match(second.message, /nessun secondo contenuto/i);
+  }
+
+  const assets = await prisma.contentAsset.findMany({ where: { contentId: row!.id } });
+  assert.equal(assets.length, 1, "il visuale non viene duplicato nel riuso");
+});
+
+test("9c. due destinazioni diverse non condividono il DRAFT", async () => {
+  const before = await draftCount();
+  const a = await createContentTool().execute({
+    fromCatalog: true,
+    destination: BARE_DESTINATION,
+    platforms: ["INSTAGRAM"],
+  }) as { ok: boolean; message: string; data?: Record<string, unknown> };
+  const b = await createContentTool().execute({
+    fromCatalog: true,
+    destination: FULL_DESTINATION,
+    platforms: ["FACEBOOK"],
+  }) as { ok: boolean; message: string; data?: Record<string, unknown> };
+
+  assert.equal(a.ok, true, a.message);
+  assert.equal(b.ok, true, b.message);
+  assert.notEqual(a.data!.catalogProposalId, b.data!.catalogProposalId, "proposte diverse");
+  assert.equal(b.data!.visualReused, false, "la seconda destinazione crea il suo DRAFT");
+  contentIds.push(String(b.data!.id));
+
+  // Solo la destinazione già materializzata può riusare: al massimo un DRAFT
+  // nuovo, e comunque uno solo per proposta.
+  const rows = await prisma.content.findMany({
+    where: { catalogProposalId: { in: [bareId, fullId] } },
+  });
+  const perProposal = new Map<string, number>();
+  for (const r of rows) perProposal.set(r.catalogProposalId!, (perProposal.get(r.catalogProposalId!) ?? 0) + 1);
+  for (const [proposalId, n] of perProposal) {
+    assert.equal(n, 1, `un solo DRAFT per la proposta ${proposalId}, trovati ${n}`);
+  }
+  assert.equal(rows.some((r) => r.catalogProposalId === fullId), true, "la nuova destinazione nasce");
+  assert.ok(await draftCount() - before <= 2, "mai più di due DRAFT per due richieste");
+
+  const assets = await prisma.contentAsset.findMany({
+    where: { contentId: { in: rows.map((r) => r.id) } },
+  });
+  assert.equal(assets.length, rows.length, "un visuale per contenuto, nessun riuso di file");
 });
 
 /* ------------------------------------------------------------------ *
@@ -885,6 +1124,54 @@ test("il prompt dichiara il catalogo come fonte dei post", () => {
   assert.match(SYSTEM_PROMPT, /searchCatalog/);
   assert.match(SYSTEM_PROMPT, /fromCatalog/);
   assert.match(SYSTEM_PROMPT, /NON creare il DRAFT/);
+});
+
+test("il contratto di createContent descrive il visuale come parte del DRAFT di catalogo", () => {
+  const tool = getTool("createContent");
+  assert.ok(tool, "createContent deve essere nel registry");
+
+  // L'ordine della procedura: prima si cerca, poi si crea.
+  assert.match(tool.description, /cerca prima con searchCatalog/);
+  assert.match(tool.description, /"fromCatalog": true/);
+  assert.match(tool.description, /catalogProposalId/);
+
+  // La promessa del visuale, nelle sue tre parti: DRAFT completo, originale
+  // se c'è, generazione altrimenti, e nessun DRAFT a metà in caso di errore.
+  assert.match(tool.description, /DRAFT nasce COMPLETO, visuale incluso/);
+  assert.match(tool.description, /immagine ufficiale valida viene scaricata e usata/);
+  assert.match(tool.description, /altrimenti il visual viene generato dal provider immagini configurato/);
+  assert.match(tool.description, /Se il visuale non può essere materializzato non viene creato alcun DRAFT/);
+  assert.match(tool.description, /ok:false con il motivo/);
+
+  // `withMedia` non è un interruttore: resta per compatibilità e non viene
+  // presentato come il modo per ottenere un'immagine.
+  assert.match(tool.description, /"withMedia" è un parametro legacy\/compatibilità/);
+  assert.doesNotMatch(
+    tool.description,
+    /questo tool non genera immagini AI/,
+    "la frase descriveva il tool intero: era falso per il flusso catalogo"
+  );
+
+  // Il ramo senza catalogo mantiene il suo significato: nessuna immagine.
+  assert.match(tool.description, /SENZA catalogo \(solo "topic"\): qui NON genera immagini AI/);
+
+  // Le stesse promesse devono arrivare allo stesso modello che legge gli
+  // argomenti, non solo nella description del tool.
+  const schema = (tool.schema as unknown as { shape: Record<string, { description?: string }> }).shape;
+  assert.match(
+    schema.fromCatalog.description ?? "",
+    /il DRAFT viene creato con il visuale già a terra/,
+    "fromCatalog deve dichiarare il visuale, non solo il testo"
+  );
+  assert.match(schema.fromCatalog.description ?? "", /non viene creato alcun DRAFT/);
+  assert.match(schema.destination.description ?? "", /nasce anche con il visuale/);
+  assert.match(schema.withMedia.description ?? "", /Legacy\/compatibilità: non usato/);
+  assert.match(schema.withMedia.description ?? "", /Non controlla il visuale del flusso catalogo/);
+  assert.doesNotMatch(
+    schema.withMedia.description ?? "",
+    /non genera immagini AI/,
+    "withMedia non deve più attribuirsi la responsabilità del visuale"
+  );
 });
 
 test("il confronto testuale del catalogo ignora maiuscole e accenti", () => {

@@ -14,9 +14,12 @@ import {
   linkAssetAction,
   unlinkAssetAction,
 } from "../src/lib/actions/media";
+import { deleteUploadedFile, saveUploadedFile, uploadedFileExists } from "../src/lib/uploads";
 
 const contentIds: string[] = [];
 const assetIds: string[] = [];
+/** File creati dai test: spariscono con la cleanup, anche se un assert fallisce. */
+const tempFileUrls: string[] = [];
 
 function uniq(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -60,6 +63,29 @@ async function cleanup() {
       /* già eliminato */
     }
   }
+  for (const url of tempFileUrls.splice(0)) {
+    try {
+      await deleteUploadedFile(url);
+    } catch {
+      /* già eliminato */
+    }
+  }
+}
+
+/** PNG 1x1 valido: il file su disco è quello che il test verifica. */
+const PNG_1PX = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64"
+);
+
+async function saveTempFile(originalName: string) {
+  const saved = await saveUploadedFile({
+    buffer: PNG_1PX,
+    originalName,
+    mimeType: "image/png",
+  });
+  tempFileUrls.push(saved.url);
+  return saved;
 }
 
 before(async () => {
@@ -498,5 +524,139 @@ describe("unlink non distruttivo vs delete distruttivo", () => {
     // L'associazione col contenuto reale è intatta.
     assert.equal((await getAsset(asset.id))?.contentId, real.id);
     assert.equal((await getContent(real.id))?.assets.length, 1);
+  });
+});
+
+/**
+ * Ciclo di vita del FILE fisico.
+ *
+ * La riga `ContentAsset` sparisce con il cascade quando il contenuto viene
+ * eliminato: senza un cleanup esplicito il file resta orfano in
+ * `/public/uploads` e non è più raggiungibile da nessuna parte. I test
+ * verificano il file su disco, non solo il database.
+ */
+describe("deleteContent e file fisici in /public/uploads", () => {
+  test("1) elimina anche il file dell'asset, non solo la riga", async () => {
+    const content = await makeContent();
+    const saved = await saveTempFile(`leak-${uniq("own")}.png`);
+    assert.equal(await uploadedFileExists(saved.url), true, "precondizione: file su disco");
+
+    const asset = await createAsset({
+      url: saved.url,
+      filename: saved.pathname.split(/[\\/]/).pop()!,
+      mimeType: saved.mimeType,
+      kind: "IMAGE",
+      contentId: content.id,
+    });
+    assetIds.push(asset.id);
+
+    await deleteContent(content.id);
+
+    assert.equal(
+      await prisma.contentAsset.findUnique({ where: { id: asset.id } }),
+      null,
+      "la riga asset sparisce col cascade"
+    );
+    assert.equal(
+      await uploadedFileExists(saved.url),
+      false,
+      "il file non deve restare orfano in /public/uploads"
+    );
+  });
+
+  test("2) NON cancella un file condiviso con un altro contenuto", async () => {
+    // È il caso della duplicazione: le righe asset sono copiate, il file no.
+    const first = await makeContent();
+    const second = await makeContent();
+    const saved = await saveTempFile(`leak-${uniq("shared")}.png`);
+    const filename = saved.pathname.split(/[\\/]/).pop()!;
+
+    const a1 = await createAsset({
+      url: saved.url,
+      filename,
+      mimeType: saved.mimeType,
+      kind: "IMAGE",
+      contentId: first.id,
+    });
+    const a2 = await createAsset({
+      url: saved.url,
+      filename,
+      mimeType: saved.mimeType,
+      kind: "IMAGE",
+      contentId: second.id,
+    });
+    assetIds.push(a1.id, a2.id);
+
+    await deleteContent(first.id);
+
+    assert.equal(
+      await uploadedFileExists(saved.url),
+      true,
+      "il file serve ancora al secondo contenuto"
+    );
+    const survivor = await prisma.contentAsset.findUnique({ where: { id: a2.id } });
+    assert.equal(survivor?.contentId, second.id);
+  });
+
+  test("3) NON cancella un file ancora in Media Library come non associato", async () => {
+    const content = await makeContent();
+    const saved = await saveTempFile(`leak-${uniq("unlinked")}.png`);
+    const asset = await createAsset({
+      url: saved.url,
+      filename: saved.pathname.split(/[\\/]/).pop()!,
+      mimeType: saved.mimeType,
+      kind: "IMAGE",
+      contentId: content.id,
+    });
+    assetIds.push(asset.id);
+
+    // L'unlink è non distruttivo: l'asset torna "Non associato" e il file
+    // deve continuare a esistere anche quando il contenuto sparisce.
+    await unlinkAssetFromContent(content.id, asset.id);
+    await deleteContent(content.id);
+
+    assert.equal(
+      await uploadedFileExists(saved.url),
+      true,
+      "un asset non associato resta proprietario del proprio file"
+    );
+    assert.equal((await getAsset(asset.id))?.contentId, null);
+  });
+
+  test("4) non fallisce se il file è già sparito dal disco", async () => {
+    const content = await makeContent();
+    const saved = await saveTempFile(`leak-${uniq("gone")}.png`);
+    const asset = await createAsset({
+      url: saved.url,
+      filename: saved.pathname.split(/[\\/]/).pop()!,
+      mimeType: saved.mimeType,
+      kind: "IMAGE",
+      contentId: content.id,
+    });
+    assetIds.push(asset.id);
+
+    await deleteUploadedFile(saved.url);
+    assert.equal(await uploadedFileExists(saved.url), false, "precondizione: file assente");
+
+    // La cancellazione del contenuto deve restare riuscita: un file mancante
+    // è uno stato legittimo, non un errore da propagare all'utente.
+    await deleteContent(content.id);
+    assert.equal(await getContent(content.id), null);
+  });
+
+  test("5) ignora url non locali", async () => {
+    const content = await makeContent();
+    const asset = await createAsset({
+      url: "https://example.com/img/remote-official.jpg",
+      filename: "remote-official.jpg",
+      mimeType: "image/jpeg",
+      kind: "IMAGE",
+      contentId: content.id,
+    });
+    assetIds.push(asset.id);
+
+    // Nessun errore e nessun tentativo di scrivere fuori da /uploads.
+    await deleteContent(content.id);
+    assert.equal(await getContent(content.id), null);
   });
 });

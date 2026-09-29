@@ -19,10 +19,26 @@ export interface AiChatOptions {
   onToken?: (chunk: string) => void;
   /** Temperatura di generazione */
   temperature?: number;
+  /**
+   * Context window in token per questa chiamata. Se omesso vale il default del
+   * provider (per Ollama `OLLAMA_NUM_CTX`): deve essere più grande del prompt,
+   * altrimenti il runtime evetta i token più vecchi, cioè le regole.
+   */
+  numCtx?: number;
+  /** Tetto di token generati per questa chiamata (default del provider) */
+  numPredict?: number;
 }
 
 export interface AiCompletion {
   text: string;
+  /**
+   * Token di prompt valutati dal provider, quando li espone (Ollama li manda
+   * nell'ultimo chunk del stream). Serve a verificare che il prompt entri nel
+   * contesto: diagnostica, non usata per decidere nulla.
+   */
+  promptEvalCount?: number;
+  /** Token generati, quando il provider li espone. */
+  evalCount?: number;
 }
 
 /** Errore quando il provider AI non è raggiungibile o non configurato */

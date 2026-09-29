@@ -15,7 +15,7 @@
     "db:fix-asset-kind": "node prisma/fix-asset-kind.js",
     "db:studio": "prisma studio",
     "check:ollama": "npx --no-install tsx scripts/check-ollama-chat.ts",
-    "test": "npx --no-install tsx --test --test-concurrency=1 tests/workflow.test.ts tests/approval-workflow.test.ts tests/contents-ui.test.ts tests/content-creation-media.test.ts tests/agent-envelope.test.ts tests/ollama-contract.test.ts tests/tools-schema.test.ts tests/publish-facebook.test.ts tests/publish-facebook-media.test.ts tests/publish-instagram.test.ts tests/media-assets.test.ts tests/upload-kind.test.ts tests/asset-kind-backfill.test.ts tests/catalog-import.test.ts tests/catalog-content-flow.test.ts tests/remote-image.test.ts tests/catalog-visual-flow.test.ts",
+    "test": "npx --no-install tsx --test --test-concurrency=1 tests/workflow.test.ts tests/approval-workflow.test.ts tests/contents-ui.test.ts tests/content-creation-media.test.ts tests/agent-envelope.test.ts tests/ollama-contract.test.ts tests/tools-schema.test.ts tests/publish-facebook.test.ts tests/publish-facebook-media.test.ts tests/publish-instagram.test.ts tests/unpublish-content.test.ts tests/media-assets.test.ts tests/upload-kind.test.ts tests/asset-kind-backfill.test.ts tests/catalog-import.test.ts tests/catalog-content-flow.test.ts tests/remote-image.test.ts tests/catalog-visual-flow.test.ts tests/catalog-visual-tool-flow.test.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {
