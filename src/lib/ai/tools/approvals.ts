@@ -5,6 +5,8 @@ import {
   rejectContent as svcReject,
 } from "@/lib/services/content";
 import { AiTool, contentBriefView } from "@/lib/ai/tools/types";
+import { friendlyMessage } from "@/lib/errors/user-message";
+import { logAIError } from "@/lib/logger";
 
 export const getPendingApprovalsTool: AiTool = {
   name: "getPendingApprovals",
@@ -41,7 +43,8 @@ export const approveContentTool: AiTool = {
         data: contentBriefView(updated),
       };
     } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      logAIError("tool.approveContent", { contentId: parsed.contentId }, e);
+      return { ok: false, message: friendlyMessage(e) };
     }
   },
 };
@@ -65,7 +68,8 @@ export const rejectContentTool: AiTool = {
         data: contentBriefView(updated),
       };
     } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      logAIError("tool.rejectContent", { contentId: parsed.contentId }, e);
+      return { ok: false, message: friendlyMessage(e) };
     }
   },
 };

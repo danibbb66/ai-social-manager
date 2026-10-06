@@ -9,6 +9,15 @@
  */
 
 /** Normalizza gli hashtag: solo token validi, univoci, prefissati con #. */
+import { placeNameFrom } from "@/lib/ai/place-name";
+import {
+  NO_FACTS,
+  editorialCaption,
+  editorialTitle,
+  isGenericTitle,
+  titleNamesPlace,
+} from "@/lib/ai/editorial-matrix";
+
 export function cleanHashtags(raw: string): string {
   const words = raw
     .split(/[\s,;]+/)
@@ -60,78 +69,51 @@ export type CopyFallback = {
   title: string | null;
 };
 
-/** Maiuscola iniziale, senza toccare il resto del testo. */
-function sentenceCase(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-/** Etichetta breve del topic, tagliata su un confine di parola. */
-function topicLabel(topic: string, max = 52): string {
-  const text = topic.trim();
-  if (text.length <= max) return text;
-  const cut = text.slice(0, max);
-  const boundary = cut.lastIndexOf(" ");
-  return (boundary > max / 2 ? cut.slice(0, boundary) : cut).trim();
-}
-
-/** Suffissi del titolo: solo tono editoriale, nessun fatto commerciale. */
-const TITLE_SUFFIXES = [
-  "la nostra proposta",
-  "proposta di viaggio",
-  "da vivere con calma",
-];
-
-/**
- * Impianti di caption alternativi, per non produrre a ogni contenuto la stessa
- * cadenza. Sono deliberatamente agnostici: non nominano località, prezzi,
- * date, strutture o servizi, quindi non possono inventare informazioni che
- * l'utente non ha fornito.
- */
-const CAPTION_TEMPLATES = [
-  (label: string) =>
-    `${label}: da vivere con calma, tra dettagli e atmosfera, senza fretta. ✨`,
-  (label: string) =>
-    `${label}: un itinerario costruito con cura, dove ogni tappa ha il suo tempo. ✨`,
-  (label: string) =>
-    `${label}: da scoprire passo dopo passo, con il tempo giusto per godersi il viaggio. ✨`,
-];
-
-/** Scelta stabile: stesso topic, stesso testo, sempre. */
-function variantIndex(topic: string, size: number): number {
-  let hash = 0;
-  for (let i = 0; i < topic.length; i += 1) hash = (hash + topic.charCodeAt(i)) % size;
-  return hash;
-}
-
 /**
  * Completa i campi mancanti a partire dal topic vincolante.
  *
  * Non riscrive mai un campo già valorizzato: restituisce null per quelli
- * lasciati intatti. Titolo e caption restano distinti e il testo non è una
- * ripetizione del topic, ma resta comunque una bozza da rifinire a mano.
+ * lasciati intatti. Titolo e caption vengono dalla matrice editoriale, quindi
+ * rispettano le stesse regole del flusso di catalogo: il titolo nomina sempre
+ * il luogo e non contiene mai una formula generica, e la caption ha la
+ * struttura del formato.
+ *
+ * Il topic è l'unica fonte: è il nome del luogo più qualche parola della
+ * richiesta ("proposta Calabria"). Non c'è nessun dato commerciale, quindi la
+ * matrice lavora con `NO_FACTS` e non può inventare prezzi, date o durate.
+ * Resta una bozza da rifinire a mano.
  */
 export function fallbackCopyFromTopic(input: {
   topic: string;
+  /** Formato editoriale: decide la struttura di titolo e caption. */
+  format?: string | null;
+  /** Destinazione esplicita, se il modello l'ha passata. */
+  destination?: string | null;
   title?: string | null;
   caption?: string | null;
   hashtags?: string | null;
 }): CopyFallback {
   const topic = input.topic.trim();
-  const label = topic ? sentenceCase(topicLabel(topic)) : "";
-  const variant = label ? variantIndex(topic, CAPTION_TEMPLATES.length) : 0;
+  // Il luogo viene dalla destinazione esplicita quando c'è, altrimenti si
+  // ricava dal topic tolcendone le formule di richiesta ("proposta Calabria" →
+  // "Calabria"). Senza un nome di luogo non c'è un titolo possibile: restare
+  // senza testo è preferibile a stampare "proposta di viaggio".
+  const place = placeNameFrom(input.destination, topic, input.title);
+  const format = (input.format ?? "").trim().toUpperCase() || "HERO_DESTINATION";
+
+  let title = place ? editorialTitle(format, place, NO_FACTS) : null;
+  // Difesa finale: un titolo che non nomina il luogo, o che è una delle formule
+  // bandite, non è un titolo ammissibile. Il nome del luogo è l'unico titolo che
+  // non può mai sbagliare, quindi si ripiega su quello.
+  if (title && (!titleNamesPlace(title, place) || isGenericTitle(title))) title = place;
 
   return {
-    title:
-      input.title && input.title.trim()
-        ? null
-        : label
-          ? `${label} — ${TITLE_SUFFIXES[variant]}`
-          : null,
+    title: input.title && input.title.trim() ? null : title,
     caption:
       input.caption && input.caption.trim()
         ? null
-        : label
-          ? CAPTION_TEMPLATES[variant](label)
+        : place
+          ? editorialCaption(format, place, NO_FACTS)
           : null,
     hashtags:
       input.hashtags && input.hashtags.trim() ? null : hashtagsFromTopic(topic),

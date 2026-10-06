@@ -34,3 +34,4 @@ npm-debug.log*
 yarn-debug.log*
 *.tsbuildinfo
 .vercel
+.vercel

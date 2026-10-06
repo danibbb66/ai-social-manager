@@ -6,6 +6,8 @@ import { createAsset } from "@/lib/services/media";
 import { getVideoProvider } from "@/lib/video/factory";
 import { VideoGenerationUnavailableError } from "@/lib/video/provider";
 import { logAudit } from "@/lib/audit";
+import { logAIError } from "@/lib/logger";
+import { friendlyMessage } from "@/lib/errors/user-message";
 import { AiTool } from "@/lib/ai/tools/types";
 import { platformsField } from "@/lib/ai/tools/schemas";
 
@@ -124,12 +126,13 @@ export const createCarouselTool: AiTool = {
       await logAudit("CAROUSEL_UPDATED", "Content", content.id, { slideCount: slideData.length });
       return {
         ok: true,
-        message: `Carousel "${content.title}" aggiornato con ${slideData.length} slide (id ${content.id}).`,
+        message: `Carousel "${content.title}" aggiornato con ${slideData.length} slide.`,
         data: { contentId: content.id, slides: slideData },
       };
     } catch (e) {
       await finishJob(job.id, false, undefined, String(e));
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      logAIError("tool.createCarousel", { tool: "createCarousel" }, e);
+      return { ok: false, message: friendlyMessage(e) };
     }
   },
 };
@@ -189,11 +192,15 @@ export const generateVideoTool: AiTool = {
       await logAudit("VIDEO_GENERATED", "ContentAsset", asset.id, { contentId: content.id, durationSec: gen.durationSec });
       return {
         ok: true,
-        message: `Video generato (${gen.durationSec}s): ${gen.url}`,
+        // Il file generato resta in `data`, dove il modello e il chiamante lo
+        // trovano: la frase per l'utente non contiene il percorso, perché un
+        // percorso di file è un dettaglio della macchina e non una risposta.
+        message: `Video generato (${gen.durationSec}s) e collegato al contenuto.`,
         data: { contentId: updated.id, url: gen.url, durationSec: gen.durationSec, assetId: asset.id },
       };
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = friendlyMessage(e);
+      logAIError("tool.generateVideo", { contentId: content.id }, e);
       await finishJob(job.id, false, undefined, message);
       return { ok: false, message };
     }

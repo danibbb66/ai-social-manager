@@ -144,13 +144,22 @@ export function toolsSystemDescription(): string {
   ).join("\n");
 }
 
+/** Uno schema che avvolge un altro schema (ZodOptional, ZodNullable, ...). */
+interface UnwrappableSchema {
+  unwrap(): z.ZodTypeAny;
+}
+
+function isUnwrappable(v: z.ZodTypeAny): v is z.ZodTypeAny & UnwrappableSchema {
+  return typeof (v as { unwrap?: unknown }).unwrap === "function";
+}
+
 function describeSchema(schema: z.ZodTypeAny): Record<string, unknown> {
   if (!("shape" in schema) || typeof schema.shape !== "object") return {};
   const shape = schema.shape as Record<string, z.ZodTypeAny>;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(shape)) {
     const isOptional = v.isOptional?.() ?? false;
-    const inner = isOptional ? (v as z.ZodOptional<z.ZodTypeAny>).unwrap() : v;
+    const inner = isOptional && isUnwrappable(v) ? v.unwrap() : v;
     out[k] = describeField(inner, isOptional);
   }
   return out;

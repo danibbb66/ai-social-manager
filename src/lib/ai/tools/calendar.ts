@@ -5,6 +5,8 @@ import {
 } from "@/lib/services/content";
 import { getCalendar as svcGetCalendar } from "@/lib/services/calendar";
 import { logAudit } from "@/lib/audit";
+import { logAIError } from "@/lib/logger";
+import { friendlyMessage } from "@/lib/errors/user-message";
 import { AiTool } from "@/lib/ai/tools/types";
 
 export const scheduleContentTool: AiTool = {
@@ -30,7 +32,8 @@ export const scheduleContentTool: AiTool = {
         data: { id: updated.id, status: updated.status, scheduledDate: updated.scheduledDate },
       };
     } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      logAIError("tool.scheduleContent", { contentId: parsed.contentId }, e);
+      return { ok: false, message: friendlyMessage(e) };
     }
   },
 };
@@ -54,7 +57,8 @@ export const unscheduleContentTool: AiTool = {
         data: { id: updated.id, status: updated.status, scheduledDate: updated.scheduledDate },
       };
     } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      logAIError("tool.unscheduleContent", { contentId: parsed.contentId }, e);
+      return { ok: false, message: friendlyMessage(e) };
     }
   },
 };

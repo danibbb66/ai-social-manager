@@ -77,10 +77,6 @@ type ToolResultCardProps = {
   result?: ParsedToolResult | null;
 };
 
-const PROVIDER_LABELS: Record<string, string> = {
-  magnific: "Magnific",
-};
-
 /**
  * Tool che operano su un contenuto: il loro risultato può essere aperto
  * direttamente in /contents/[id]. Gli altri tool (es. createIdea) non sono
@@ -100,11 +96,42 @@ function contentIdOf(toolName: string, data: Record<string, unknown> | null): st
 }
 
 /**
- * Card leggibile per i risultati dei tool AI.
+ * Etichette che non sono informative per l'utente.
+ *
+ * Sono i nomi interni dei tool e dei provider: descrivono *come* il sistema ha
+ * lavorato, non che cosa è successo. Un utente che chiede "crea un post su
+ * Formentera" non ha bisogno di sapere che è passato da `createContent` o che il
+ * file è passato da Magnific, e vederlo lo costringe a leggere una stringa che
+ * non può usare. Vengono sostituite da una frase che dice che cosa sta
+ * succedendo, o da niente.
+ */
+const INTERNAL_LABELS = new Set([
+  "Creazione contenuto",
+  "Aggiornamento contenuto",
+  "Lettura contenuto",
+  "Elenco contenuti",
+  "Duplicazione contenuto",
+  "Eliminazione contenuto",
+  "Generazione immagine",
+  "magnific",
+  "Magnific",
+]);
 
- * - generateImage: anteprima, stato, provider e link alla Media Library.
- * - altri tool: messaggio umano senza mai renderizzare JSON grezzo.
- * - stato live (streaming): indicazione di esecuzione senza dettagli.
+/** Il testo da mostrare come etichetta, o `null` se è una stringa interna. */
+function userLabel(label: string | null | undefined, fallback: string): string | null {
+  const text = (label ?? "").trim();
+  if (!text) return fallback;
+  return INTERNAL_LABELS.has(text) ? null : text;
+}
+
+/**
+ * Card leggibile per i risultati dei tool AI.
+ *
+ * - generateImage: anteprima del file e link alla Media Library, senza nomi di
+ *   provider né di layout.
+ * - altri tool: la sola frase di conferma del tool, o l'errore se non è andata
+ *   a buon fine.
+ * - stato live: una frase che dice che si sta lavorando, senza il nome del tool.
  */
 export function ToolResultCard({ toolName, label, ok, error, result }: ToolResultCardProps) {
   const isImage = toolName === "generateImage";
@@ -113,7 +140,6 @@ export function ToolResultCard({ toolName, label, ok, error, result }: ToolResul
   const data = result?.data ?? null;
   const imageUrl =
     data && typeof data.url === "string" && data.url.startsWith("/uploads/") ? data.url : null;
-  const provider = data && typeof data.provider === "string" ? data.provider : null;
   const message = result?.message || null;
   const failed = ok === false || result?.ok === false;
 
@@ -135,24 +161,19 @@ export function ToolResultCard({ toolName, label, ok, error, result }: ToolResul
             className="aspect-square w-full object-cover transition-opacity group-hover:opacity-95"
           />
         </a>
-        <div className="px-3 py-2.5">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-            Immagine generata e salvata nella Media Library.
-          </div>
-          {provider ? (
-            <div className="mt-0.5 text-[11px] text-slate-400">
-              Provider: {PROVIDER_LABELS[provider] ?? provider}
+<div className="px-3 py-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              Immagine salvata nella Media Library.
             </div>
-          ) : null}
-          <Link
-            href="/media"
-            className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-slate-700"
-          >
-            <Link2 className="h-3.5 w-3.5" />
-            Apri nella Media Library
-          </Link>
-        </div>
+            <Link
+              href="/media"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-slate-700"
+            >
+              <Link2 className="h-3.5 w-3.5" />
+              Apri nella Media Library
+            </Link>
+          </div>
       </div>
     );
   }
@@ -167,7 +188,6 @@ export function ToolResultCard({ toolName, label, ok, error, result }: ToolResul
           </div>
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-800">
             Non è stato possibile generare l&apos;immagine. Riprova.
-            {message ? <span className="mt-0.5 block text-red-600">{message}</span> : null}
           </div>
         </div>
       );
@@ -179,8 +199,8 @@ export function ToolResultCard({ toolName, label, ok, error, result }: ToolResul
           <Loader2 className="h-4 w-4 animate-spin" />
         </div>
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
-          Generazione immagine in corso…
-          <span className="block text-[11px] opacity-70">{displayLabel}</span>
+          Sto generando l&apos;immagine
+          <Loader2 className="ml-1 inline h-3 w-3 animate-spin align-middle" />
         </div>
       </div>
     );
@@ -209,6 +229,9 @@ export function ToolResultCard({ toolName, label, ok, error, result }: ToolResul
         <div>
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900">
             {message || `${displayLabel} completato.`}
+            {/* Nessun dettaglio tecnico sotto la conferma: il messaggio del tool
+                è già scritto per l'utente, e i suoi dati (id, fonti delle
+                immagini, layout) sono cose che può aprire lui in Contenuti. */}
           </div>
           {contentId ? (
             <Link
@@ -224,8 +247,11 @@ export function ToolResultCard({ toolName, label, ok, error, result }: ToolResul
     );
   }
 
-  // live / esecuzione corrente
+  // live / esecuzione corrente. Il nome del tool non entra: è una stringa di
+  // esecuzione, e quello che l'utente aspetta di vedere è che qualcosa sta
+  // succedendo, non come si chiama lo strumento che lo sta facendo.
   const liveFailed = failed;
+  const liveLabel = userLabel(displayLabel, "Sto lavorando");
   return (
     <div className="flex items-start gap-2">
       <div
@@ -248,7 +274,7 @@ export function ToolResultCard({ toolName, label, ok, error, result }: ToolResul
           error || "Operazione non riuscita. Riprova."
         ) : (
           <>
-            {displayLabel}
+            {liveLabel}
             <Loader2 className="ml-1 inline h-3 w-3 animate-spin align-middle" />
           </>
         )}

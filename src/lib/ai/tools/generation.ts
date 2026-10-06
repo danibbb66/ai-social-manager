@@ -3,11 +3,12 @@ import { ContentType } from "@prisma/client";
 import { generateWithBrand, recordJob, finishJob, tryParseJson } from "@/lib/ai/generate";
 import { getContent, updateContent } from "@/lib/services/content";
 import { getImageProvider } from "@/lib/images/factory";
-import { ImageGenerationUnavailableError } from "@/lib/images/provider";
 import { MAGNIFIC_ASPECT_RATIOS } from "@/lib/images/magnific";
 import { createAsset } from "@/lib/services/media";
 import { deleteUploadedFile } from "@/lib/uploads";
 import { logAudit } from "@/lib/audit";
+import { logAIError } from "@/lib/logger";
+import { friendlyMessage } from "@/lib/errors/user-message";
 import { AiTool } from "@/lib/ai/tools/types";
 import { platformsField } from "@/lib/ai/tools/schemas";
 import { cleanHashtags } from "@/lib/ai/content-copy";
@@ -37,9 +38,9 @@ export const generateCaptionTool: AiTool = {
     let title = `Post su ${topic ?? "argomento generico"}`;
     let target = null;
 
-    if (parsed.contentId) {
+if (parsed.contentId) {
       target = await getContent(parsed.contentId);
-      if (!target) return { ok: false, message: `Contenuto ${parsed.contentId} non trovato.` };
+      if (!target) return { ok: false, message: "Il contenuto indicato non esiste." };
       topic = topic ?? target.title ?? target.caption?.slice(0, 80) ?? "argomento generico";
       title = target.title ?? title;
     }
@@ -88,12 +89,13 @@ export const generateCaptionTool: AiTool = {
       await logAudit("CAPTION_GENERATED", "Content", savedId, { topic });
       return {
         ok: true,
-        message: `Caption generata${savedId ? ` e salvata sul contenuto ${savedId}` : ""}: "${caption.slice(0, 120)}${caption.length > 120 ? "…" : ""}"`,
+        message: `Caption generata${savedId ? " e salvata sul contenuto" : ""}: "${caption.slice(0, 120)}${caption.length > 120 ? "…" : ""}"`,
         data: { contentId: savedId, caption, hashtags },
       };
     } catch (e) {
+      logAIError("tool.generateCaption", { contentId: target?.id ?? null }, e);
       await finishJob(job.id, false, undefined, String(e));
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      return { ok: false, message: friendlyMessage(e) };
     }
   },
 };
@@ -121,7 +123,7 @@ export const generateHashtagsTool: AiTool = {
     let targetId: string | null = null;
     if (parsed.contentId) {
       const content = await getContent(parsed.contentId);
-      if (!content) return { ok: false, message: `Contenuto ${parsed.contentId} non trovato.` };
+      if (!content) return { ok: false, message: "Il contenuto indicato non esiste." };
       targetId = content.id;
       topic = topic ?? content.title ?? "viaggi";
     }
@@ -148,8 +150,9 @@ export const generateHashtagsTool: AiTool = {
       await finishJob(job.id, true, { hashtags });
       return { ok: true, message: `Hashtag generati (${hashtags.split(" ").length}): ${hashtags}`, data: { contentId: targetId, hashtags } };
     } catch (e) {
+      logAIError("tool.generateHashtags", { contentId: targetId }, e);
       await finishJob(job.id, false, undefined, String(e));
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      return { ok: false, message: friendlyMessage(e) };
     }
   },
 };
@@ -236,17 +239,18 @@ export const generateImageTool: AiTool = {
       });
       return {
         ok: true,
-        message: `Immagine generata e salvata nella Media Library (asset ${asset.id}). ${parsed.contentId ? `Collegata al contenuto ${parsed.contentId}.` : ""}`,
+        message:
+          `Immagine generata e salvata nella Media Library.` +
+          `${parsed.contentId ? " Collegata al contenuto indicato." : ""}`,
         data: { assetId: asset.id, url: gen.url, provider: gen.provider },
       };
     } catch (e) {
-      const message =
-        e instanceof ImageGenerationUnavailableError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : String(e);
-      await finishJob(job.id, false, undefined, message);
+      // Il dettaglio dell'errore — endpoint, chiave, codice del provider —
+      // resta nel job e nel log: la frase che l'utente legge dice solo che
+      // l'operazione non è riuscita.
+      logAIError("tool.generateImage", { contentId: parsed.contentId ?? null }, e);
+      const message = friendlyMessage(e, "Non sono riuscito a generare l'immagine. Riprova.");
+      await finishJob(job.id, false, undefined, String(e));
       return { ok: false, message, data: null };
     }
   },

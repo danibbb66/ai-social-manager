@@ -1,4 +1,4 @@
-import { test, describe, before, after } from "node:test";
+﻿import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -27,13 +27,15 @@ import {
 import { createContentTool } from "../src/lib/ai/tools/content";
 import { getTool } from "../src/lib/ai/tools/registry";
 import { ALLOWED_TRANSITIONS, STATUS_ORDER, canTransition } from "../src/lib/status";
-import { setImageProvider } from "../src/lib/images/factory";
+import { setImageProvider, setStockProvider } from "../src/lib/images/factory";
 import { ImageProvider } from "../src/lib/images/provider";
+import { installFakeStock } from "./helpers/stock";
 
 /**
- * createContentTool genera il visual del DRAFT: nei test il provider è un
- * doppione che NON genera, così nessuna chiamata di rete e nessun consumo di
- * crediti. Il percorso di generazione è verificato in
+ * createContentTool porta a terra anche il visual del DRAFT, cercandolo nella
+ * libreria stock: qui il provider stock è un doppione (nessuna rete), mentre
+ * il provider immagini NON genera, così resta dimostrato che il percorso di
+ * generazione non viene toccato. Il percorso di stock è verificato in
  * tests/content-creation-media.test.ts.
  */
 class NoopImageProvider implements ImageProvider {
@@ -59,6 +61,12 @@ function pastDate(): Date {
 }
 
 async function cleanup() {
+  for (const id of createdIds) {
+    // Gli asset stock nati con il DRAFT: via prima del contenuto.
+    await prisma.contentAsset
+      .deleteMany({ where: { contentId: id } })
+      .catch(() => {});
+  }
   for (const id of createdIds.splice(0)) {
     try {
       await deleteContent(id);
@@ -80,11 +88,13 @@ async function makeDraft(title: string) {
 
 before(async () => {
   setImageProvider(new NoopImageProvider());
+  installFakeStock();
   await cleanup();
 });
 
 after(async () => {
   setImageProvider(null);
+  setStockProvider(null);
   await cleanup();
 });
 

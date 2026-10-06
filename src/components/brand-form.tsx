@@ -113,7 +113,15 @@ export function BrandForm({ brand }: { brand: Brand | null }) {
     });
 
   return (
-    <div className="space-y-5">
+    // Form vera e propria: così il tasto Invio in qualsiasi campo salva,
+    // invece di non fare nulla (prima non c'era alcun gestore di submit).
+    <form
+      className="space-y-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        save();
+      }}
+    >
       {saveError ? (
         <div
           role="alert"
@@ -124,7 +132,12 @@ export function BrandForm({ brand }: { brand: Brand | null }) {
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Nome agenzia *">
-          <Input value={form.name} onChange={set("name")} placeholder="La Mia Agenzia di Viaggi" />
+          <Input
+            value={form.name}
+            onChange={set("name")}
+            required
+            placeholder="La Mia Agenzia di Viaggi"
+          />
         </Field>
         <Field label="Sito web">
           <Input value={form.website} onChange={set("website")} placeholder="https://…" />
@@ -202,7 +215,7 @@ export function BrandForm({ brand }: { brand: Brand | null }) {
       </div>
 
       <div className="flex justify-end border-t border-slate-100 pt-4">
-        <Button onClick={save} disabled={pending || !form.name.trim()}>
+        <Button type="submit" disabled={pending || !form.name.trim()}>
           {pending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
@@ -211,6 +224,6 @@ export function BrandForm({ brand }: { brand: Brand | null }) {
           Salva brand
         </Button>
       </div>
-    </div>
+    </form>
   );
 }

@@ -11,6 +11,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { unlinkAssetAction } from "@/lib/actions/media";
+import { cn } from "@/lib/utils";
 import {
   Button,
   Card,
@@ -235,7 +236,14 @@ export function ContentMediaSection({
         )}
 
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:border-sky-400 hover:text-sky-700">
+          <label
+            className={cn(
+              "inline-flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs font-medium transition-colors",
+              uploading || working
+                ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                : "cursor-pointer border-slate-300 text-slate-600 hover:border-sky-400 hover:text-sky-700"
+            )}
+          >
             {uploading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -248,7 +256,13 @@ export function ContentMediaSection({
               accept="image/*,video/*"
               className="sr-only"
               disabled={uploading || working}
-              onChange={(e) => upload(e.target.files)}
+              onChange={(e) => {
+                const files = e.target.files;
+                // Azzeriamo il valore: senza questo, riselezionare lo stesso
+                // file non emette change e il secondo upload non parte mai.
+                e.target.value = "";
+                upload(files);
+              }}
             />
           </label>
           <p className="text-[11px] text-slate-400">

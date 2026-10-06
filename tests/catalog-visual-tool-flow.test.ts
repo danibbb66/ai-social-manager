@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Flusso completo: `createContent({fromCatalog:true})` → visuale a terra.
  *
  * `catalog-visual-flow.test.ts` dimostra che il servizio visuale funziona.
@@ -19,23 +19,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "../src/lib/prisma";
 import { createJobOwnership } from "./helpers/aijob-ownership";
+import { installFakeStock } from "./helpers/stock";
 import {
-  CATALOG_GENERATED_ORIGIN,
-  CATALOG_VISUAL_ORIGIN,
-  type CatalogVisualMetadata,
-  type CatalogGeneratedVisualMetadata,
+  CATALOG_CREATIVE_ORIGIN,
   type AnyCatalogVisualMetadata,
 } from "../src/lib/services/catalog-visual";
-import { setImageProvider } from "../src/lib/images/factory";
+import { setImageProvider, setStockProvider } from "../src/lib/images/factory";
 import { deleteUploadedFile, saveUploadedFile } from "../src/lib/uploads";
 import { getTool } from "../src/lib/ai/tools/registry";
 import {
   buildVisualDirection,
   pickEditorialFormat,
-  visualPromptFromDirection,
 } from "../src/lib/ai/catalog-content";
+import { offerPhotoPrompt, photoDirectionFrom } from "../src/lib/services/offer-creative";
 import { toCatalogProposalDto, type CatalogProposalDto } from "../src/lib/services/catalog-ai";
 import type { GenerateImageOptions, GeneratedImage, ImageProvider, ImageUpload } from "../src/lib/images/provider";
+import sharp from "sharp";
 
 /**
  * Dominio proprio di questa suite: le immagini ufficiali devono stare
@@ -60,6 +59,15 @@ const WEBP = Buffer.concat([
   Buffer.from([0, 0, 0, 0]),
 ]);
 
+/**
+ * La fotografia generata dal provider finto.
+ *
+ * Un'immagine vero e propria: il servizio la legge da disco e la compone sotto
+ * il template, quindi `sharp` la decodifica. Il WEBP qui sopra è solo il file
+ * del catalogo, che non viene mai composto e quindi non ha bisogno di esserlo.
+ */
+let PHOTO: Buffer = Buffer.alloc(0);
+
 const originalFetch = globalThis.fetch;
 const sourceIds: string[] = [];
 const contentIds: string[] = [];
@@ -82,10 +90,9 @@ type FetchBehaviour = "ok" | "http_error" | "delete_proposal";
 /**
  * Provider finto che registra ogni generazione.
  *
- * Nel ramo ufficiale non deve mai essere chiamato: i test che lo affermano
- * falliscono se una chiamata arriva. Nel ramo generato è l'unico modo per
- * avere un file a terra senza uscire in rete, quindi qui scrive davvero un
- * file e restituisce le sue coordinate.
+ * È chiamato in ogni ramo, anche quando la proposta ha una locandina: la base
+ * del fotogramma è sempre una fotografia generata, perché la locandina è
+ * materiale del fornitore e non diventa mai il post.
  */
 class SpyImageProvider implements ImageProvider {
   readonly name = "magnific";
@@ -99,9 +106,9 @@ class SpyImageProvider implements ImageProvider {
       throw new Error("Magnific ha risposto 500");
     }
     const saved = await saveUploadedFile({
-      buffer: WEBP,
-      originalName: `magnific-${this.calls.length}.webp`,
-      mimeType: "image/webp",
+      buffer: PHOTO,
+      originalName: `magnific-${this.calls.length}.jpg`,
+      mimeType: "image/jpeg",
     });
     generatedFiles.push(saved.url);
     return {
@@ -225,6 +232,13 @@ before(async () => {
   await jobOwnership.capture();
   provider = new SpyImageProvider();
   setImageProvider(provider);
+  installFakeStock();
+
+  PHOTO = await sharp({
+    create: { width: 1600, height: 1200, channels: 3, background: "#2f6d55" },
+  })
+    .jpeg({ quality: 92 })
+    .toBuffer();
 
   const source = await prisma.catalogSource.create({
     data: {
@@ -282,6 +296,7 @@ before(async () => {
 after(async () => {
   globalThis.fetch = originalFetch;
   setImageProvider(null);
+  setStockProvider(null);
   await cleanupAll();
   const rest = await listUploads();
   assert.deepEqual(rest, baselineFiles, "la suite non deve lasciare file in public/uploads");
@@ -338,21 +353,28 @@ describe("createContent con Catalogo: il visuale parte con il DRAFT", () => {
     assert.equal(data.status, "DRAFT");
     assert.equal(typeof data.title, "string");
     assert.equal(typeof data.editorialFormat, "string");
-    assert.equal(data.visualOrigin, CATALOG_VISUAL_ORIGIN);
-    assert.equal(data.visualOrigin, "catalog-official");
+    assert.equal(data.visualOrigin, CATALOG_CREATIVE_ORIGIN);
+    assert.equal(data.visualOrigin, "catalog-social-creative");
     assert.equal(data.visualReused, false);
     assert.equal(data.withMedia, true);
     assert.equal(typeof data.assetId, "string");
     assert.equal(data.catalogProposalId, withImageId);
-    assert.match(result.message, /immagine ufficiale del catalogo/);
+    // Il messaggio all'utente è la conferma, non il log di esecuzione.
+    assert.match(result.message, /creato con successo/i);
+    assert.match(result.message, /DRAFT/);
+    assert.doesNotMatch(result.message, /creatività dell'agenzia|asset|catalog-/i);
+    // La provenienza del visuale resta nei dati, dove il modello la legge.
+    assert.equal(data.visualOrigin, "catalog-social-creative");
 
-    // Un solo DRAFT, un solo asset: la stessa richiesta non si sdoppia.
-    assert.deepEqual(await countsSince(marker), { content: 1, asset: 1 });
+    // Un solo DRAFT, un solo asset: la stessa richiesta non si sdoppia. La
+    // locandina del fornitore è un asset in più, ma vive in Media Library e non
+    // è tra quelli del contenuto.
+    assert.deepEqual(await countsSince(marker), { content: 1, asset: 2 });
 
     const stored = await storedWithAssets(String(data.id));
     assert.equal(stored.catalogProposalId, withImageId);
     assert.equal(stored.approvals.length, 0, "nessuna approvazione su un DRAFT");
-    assert.equal(stored.assets.length, 1, "il DRAFT non può esistere senza visuale");
+    assert.equal(stored.assets.length, 1, "il DRAFT ha un solo asset: il visuale");
     assert.equal(stored.assets[0].id, data.assetId);
     assert.equal(stored.assets[0].kind, "IMAGE");
     assert.deepEqual(
@@ -360,24 +382,71 @@ describe("createContent con Catalogo: il visuale parte con il DRAFT", () => {
       ["FACEBOOK", "INSTAGRAM"]
     );
 
-    // Il file a terra è l'originale del catalogo, non un'immagine prodotta qui.
-    const meta = stored.assets[0].metadata as unknown as CatalogVisualMetadata;
-    assert.equal(meta.origin, CATALOG_VISUAL_ORIGIN);
-    assert.equal(meta.provider, "catalog");
-    assert.equal(meta.sourceUrl, OFFICIAL_URL);
+    // Il file a terra è il fotogramma composto dall'agenzia, non la locandina.
+    const meta = stored.assets[0].metadata as unknown as AnyCatalogVisualMetadata;
+    assert.equal(meta.origin, CATALOG_CREATIVE_ORIGIN);
+    assert.equal(meta.template, "social-creative-v1");
+    assert.equal(meta.source.url, OFFICIAL_URL, "la provenienza dichiara da quale locandina arrivano i dati");
     assert.equal(meta.catalogProposalId, withImageId);
+    assert.ok(meta.brandMark !== null, "il marchio dell'agenzia è stampato sul fotogramma");
+    assert.ok(meta.commercialLines.length > 0, "i dati dell'offerta sono stampati sul fotogramma");
+
     const absolute = path.join(process.cwd(), "public", stored.assets[0].url.replace(/^\//, ""));
     assert.equal(absolute.startsWith(UPLOADS_ROOT + path.sep), true);
-    assert.deepEqual(await fs.readFile(absolute), WEBP, "il file è l'immagine ufficiale scaricata");
+    assert.notDeepEqual(
+      await fs.readFile(absolute),
+      WEBP,
+      "il visuale non può essere il file del catalogo, con dentro il logo del fornitore"
+    );
 
-    // Con l'originale non si genera: il provider non deve nemmeno essere stato interrogato.
-    assert.equal(provider.calls.length, 0, "l'originale non si sostituisce con una generazione");
-    assert.equal(fetchCalls, 1, "una sola richiesta di rete, per il download");
+    // E l'originale è in Media Library, dichiarato come provenienza del fornitore.
+    const source = await prisma.contentAsset.findUniqueOrThrow({ where: { id: meta.source.localAssetId! } });
+    assert.equal(source.contentId, null, "la locandina non è allegata al post");
+    assert.equal((source.metadata as { role?: string }).role, "SOURCE_FLYER");
+    const sourceAbsolute = path.join(process.cwd(), "public", source.url.replace(/^\//, ""));
+    assert.deepEqual(await fs.readFile(sourceAbsolute), WEBP, "la provenienza è il file originale");
+
+    assert.equal(provider.calls.length, 1, "una fotografia generata per il fotogramma");
+    assert.equal(fetchCalls, 1, "una sola richiesta di rete, per il download della provenienza");
     assert.equal(
       await prisma.aIJob.count({ where: { createdAt: { gte: marker } } }),
-      0,
-      "il ramo ufficiale non consuma crediti di generazione"
+      1,
+      "una generazione, un job"
     );
+  });
+
+  test("1b. nessun asset del DRAFT è mai il file del fornitore", async () => {
+    // Il requisito, verificato sul risultato e non sulle intenzioni: qualunque
+    // asset resti allegato al contenuto deve essere la nostra creatività. Una
+    // locandina promozionale allegata al DRAFT mostrerebbe il logo del fornitore
+    // nell'anteprima del post e nella pubblicazione.
+    const result = await createContentTool({
+      catalogProposalId: withImageId,
+      type: "POST",
+      platforms: ["INSTAGRAM"],
+    });
+    assert.equal(result.ok, true, result.message);
+
+    const stored = await storedWithAssets(String(result.data!.id));
+    assert.ok(stored.assets.length > 0, "il DRAFT ha un visuale");
+    for (const asset of stored.assets) {
+      const meta = asset.metadata as unknown as AnyCatalogVisualMetadata;
+      assert.notEqual(
+        meta.origin,
+        "catalog-flyer-source",
+        "l'originale del fornitore non può essere tra gli asset del contenuto"
+      );
+      // La creatività dichiara la provenienza dei dati, ma il file che le è
+      // stato allegato è il fotogramma: i due url devono essere diversi.
+      if (meta.source?.localAssetId) {
+        const source = await prisma.contentAsset.findUniqueOrThrow({
+          where: { id: meta.source.localAssetId },
+          select: { url: true, contentId: true },
+        });
+        assert.notEqual(asset.url, source.url, "l'asset del DRAFT non è il file del fornitore");
+        assert.equal(source.contentId, null, "il file del fornitore resta in Media Library");
+      }
+    }
   });
 
   test("2. senza immagine in catalogo la generazione parte una volta sola, con il prompt della direzione", async () => {
@@ -391,20 +460,18 @@ describe("createContent con Catalogo: il visuale parte con il DRAFT", () => {
 
     assert.equal(result.ok, true, result.message);
     const data = result.data!;
-    assert.equal(data.visualOrigin, CATALOG_GENERATED_ORIGIN);
-    assert.equal(data.visualOrigin, "magnific");
+    assert.equal(data.visualOrigin, CATALOG_CREATIVE_ORIGIN);
     assert.equal(data.visualReused, false);
     assert.equal(data.withMedia, true);
     assert.deepEqual(await countsSince(marker), { content: 1, asset: 1 });
-    assert.equal(fetchCalls, 0, "senza originale in catalogo non si scarica nulla");
+    assert.equal(fetchCalls, 0, "senza locandina in catalogo non si scarica nulla");
 
-    // Una e una sola generazione, con il prompt che deriva dalla direzione.
+    // Una e una sola generazione, con il prompt fotografico della direzione.
     assert.equal(provider.calls.length, 1, "una sola generazione per il DRAFT");
     const dto = await loadProposal(noImageId);
     const { format } = pickEditorialFormat(dto, undefined);
     const direction = buildVisualDirection(dto, format);
-    assert.equal(direction.needsGeneration, true, "senza originale la generazione è prevista");
-    assert.equal(provider.calls[0].prompt, visualPromptFromDirection(direction));
+    assert.equal(provider.calls[0].prompt, offerPhotoPrompt(photoDirectionFrom(direction)));
 
     // Il prompt non inventa dati commerciali né destinazioni.
     const prompt = provider.calls[0].prompt;
@@ -412,14 +479,18 @@ describe("createContent con Catalogo: il visuale parte con il DRAFT", () => {
     assert.doesNotMatch(prompt, new RegExp(WITH_IMAGE_DESTINATION, "i"), "nessun'altra destinazione");
     assert.match(prompt, new RegExp(NO_IMAGE_DESTINATION, "i"), "la destinazione è quella della proposta");
 
-    // Il metadata del asset dichiara la provenienza generata.
+    // Il metadata del asset dichiara la creatività e la fotografia da cui è nata.
     const stored = await storedWithAssets(String(data.id));
     assert.equal(stored.assets.length, 1);
-    const meta = stored.assets[0].metadata as unknown as CatalogGeneratedVisualMetadata;
-    assert.equal(meta.origin, CATALOG_GENERATED_ORIGIN);
-    assert.equal(meta.provider, "magnific");
+    const meta = stored.assets[0].metadata as unknown as AnyCatalogVisualMetadata;
+    assert.equal(meta.origin, CATALOG_CREATIVE_ORIGIN);
     assert.equal(meta.catalogProposalId, noImageId);
-    assert.equal(meta.prompt, provider.calls[0].prompt, "il prompt resta tracciato con l'asset");
+    assert.equal(meta.source.url, null, "senza locandina non c'è provenienza da dichiarare");
+    assert.equal(
+      meta.generatedPhoto.prompt,
+      provider.calls[0].prompt,
+      "il prompt resta tracciato con l'asset"
+    );
     assert.ok(
       await prisma.aIJob.count({ where: { createdAt: { gte: marker } } }) > 0,
       "una generazione consuma un job: deve restare traccia del costo"
@@ -441,14 +512,16 @@ describe("createContent con Catalogo: il visuale parte con il DRAFT", () => {
     assert.equal(data.catalogFailure, "download_failed");
     assert.equal(data.createdContentId, null);
     assert.equal(data.assetId, null);
-    assert.equal(data.needsGeneration, false, "sostituire l'originale non è una strada");
+    assert.equal(data.needsGeneration, false, "la locandina non si scarica, non si sostituisce");
     assert.equal(data.catalogProposalId, withImageId);
     assert.match(result.message, /Nessun contenuto creato/);
-    assert.match(result.message, /non sostituire/i);
+    assert.match(result.message, /Non aggirare il problema/);
 
-    // Nulla è nato, né a metà: questo è il punto dell'intero flusso.
+    // Nulla è nato, né a metà: questo è il punto dell'intero flusso. La foto è
+    // già stata generata quando il download fallisce, quindi la prova che non
+    // resta nulla è sul filesystem, non solo sul conteggio delle righe.
     assert.deepEqual(await countsSince(marker), { content: 0, asset: 0 });
-    assert.equal(provider.calls.length, 0, "mai generare al posto di un originale scaricabile");
+    assert.equal(provider.calls.length, 1, "la fotografia parte prima del download e poi va buttata");
     assert.deepEqual(await listUploads(), baselineFiles, "nessun file lasciato a terra");
   });
 
@@ -470,17 +543,22 @@ describe("createContent con Catalogo: il visuale parte con il DRAFT", () => {
     });
     assert.equal(second.ok, true, second.message);
     assert.equal(second.data!.visualReused, true, "la seconda volta riusa");
-    assert.match(second.message, /riutilizzato/);
+    // Il riuso ha una frase sua: se l'utente chiede due post e ne ottiene uno,
+    // "creato con successo" sarebbe una risposta falsa.
+    assert.match(second.message, /bozza|già/i);
+    assert.doesNotMatch(second.message, /creato con successo/i);
 
     assert.equal(second.data!.id, first.data!.id, "è lo stesso contenuto");
     assert.equal(second.data!.assetId, first.data!.assetId, "è lo stesso visuale");
     assert.equal(first.data!.visualOrigin, second.data!.visualOrigin);
 
     // Il riuso non è una seconda materializzazione: niente nuova rete, niente
-    // nuovo asset, niente nuovo lavoro pagato.
-    assert.deepEqual(await countsSince(marker), { content: 1, asset: 1 });
+    // nuovo asset, niente nuovo lavoro pagato. L'unico asset in più rispetto al
+    // conteggio precedente è la locandina scaricata come provenienza, che vive
+    // in Media Library e non è il post.
+    assert.deepEqual(await countsSince(marker), { content: 1, asset: 2 });
     assert.equal(fetchCalls, 1, "il file esiste già: non si riscarica");
-    assert.equal(provider.calls.length, 0);
+    assert.equal(provider.calls.length, 1, "la fotografia non viene ripagata");
   });
 
   test("5a. se la transazione fallisce non resta un DRAFT senza visuale", async () => {
@@ -522,8 +600,8 @@ describe("createContent con Catalogo: il visuale parte con il DRAFT", () => {
     assert.equal(result.data!.catalogProposalId, doomed.id);
 
     assert.deepEqual(await countsSince(marker), { content: 0, asset: 0 });
-    assert.deepEqual(await listUploads(), baselineFiles, "il file scaricato va rimosso");
-    assert.equal(provider.calls.length, 0);
+    assert.deepEqual(await listUploads(), baselineFiles, "i file ottenuti vanno rimossi: foto, locandina e fotogramma");
+    assert.equal(provider.calls.length, 1, "la fotografia era partita e poi è stata buttata");
   });
 
   test("5b. se la generazione fallisce non resta un DRAFT a metà", async () => {
@@ -561,10 +639,13 @@ describe("createContent con Catalogo: il visuale parte con il DRAFT", () => {
     const stored = await storedWithAssets(String(result.data!.id));
     assert.equal(stored.status, "DRAFT");
     assert.equal(stored.catalogProposalId, null, "senza catalogo nessun collegamento");
-    assert.equal(stored.assets.length, 0, "il ramo legacy non materializza nulla");
+    // Il ramo legacy non scarica e non genera: il visual arriva però dalla
+    // libreria stock, quindi il DRAFT non resta mai a mani nude.
+    assert.equal(stored.assets.length, 1, "il visual dello stock viene collegato");
+    assert.equal(result.data!.visualSource, "fake-stock");
     assert.equal(fetchCalls, 0, "senza catalogo non si scarica nulla");
     assert.equal(provider.calls.length, 0, "senza catalogo non si genera nulla");
-    assert.deepEqual(await countsSince(marker), { content: 1, asset: 0 });
+    assert.deepEqual(await countsSince(marker), { content: 1, asset: 1 });
   });
 });
 
@@ -620,20 +701,20 @@ test("8. ogni contenuto di catalogo ha esattamente un visuale, mai due e mai zer
     assert.equal(row.status, "DRAFT");
     assert.equal(row.assets.length, 1, `il contenuto ${row.id} ha ${row.assets.length} visuali invece di 1`);
     const meta = row.assets[0].metadata as unknown as AnyCatalogVisualMetadata;
-    assert.ok(
-      meta.origin === CATALOG_VISUAL_ORIGIN || meta.origin === CATALOG_GENERATED_ORIGIN,
-      "ogni visuale dichiara da dove viene"
+    assert.equal(
+      meta.origin,
+      CATALOG_CREATIVE_ORIGIN,
+      "ogni visuale dichiara di essere una creatività composta, mai l'originale del catalogo"
     );
     assert.equal(typeof row.assets[0].url, "string", "il visuale è un file, non una promessa");
+    assert.ok(meta.brandMark !== null, "ogni visuale porta il marchio dell'agenzia");
   }
 
-  // E i due rami non si confondono: l'originale resta l'originale.
-  const origins = rows.map((r) => (r.assets[0].metadata as unknown as AnyCatalogVisualMetadata).origin);
-  assert.deepEqual(
-    origins.sort(),
-    [CATALOG_GENERATED_ORIGIN, CATALOG_VISUAL_ORIGIN].sort(),
-    "una proposta con originale e una senza producono visuali dichiarati diversamente"
-  );
-  assert.equal(fetchCalls, 1, "solo l'originale è stato scaricato");
-  assert.equal(provider.calls.length, 1, "solo la proposta senza originale ha generato");
+  // Le due proposte producono due fotogrammi distinti, non lo stesso file.
+  const urls = rows.map((r) => r.assets[0].url);
+  assert.equal(new Set(urls).size, 2, "due post, due file");
+  assert.equal(fetchCalls, 1, "solo la locandina esistente è stata scaricata");
+  // Entrambe le proposte generano la fotografia del proprio fotogramma: è la
+  // base del visuale, e nessuna delle due usa il file del fornitore.
+  assert.equal(provider.calls.length, 2, "una fotografia per post");
 });

@@ -8,6 +8,7 @@ import { createJobOwnership } from "./helpers/aijob-ownership";
 import {
   runAgent,
   compactToolResult,
+  parseRequestedContentCount,
   TOOL_RESULT_MAX,
   TOOL_ROUND_BUDGET,
   type AgentStreamEvent,
@@ -22,16 +23,19 @@ import type {
 } from "../src/lib/ai/provider";
 import { getMessageHistory, getOrCreateConversation } from "../src/lib/services/chat";
 import { getContent, deleteContent, createContent } from "../src/lib/services/content";
-import { setImageProvider } from "../src/lib/images/factory";
+import { setImageProvider, setStockProvider } from "../src/lib/images/factory";
 import type { GeneratedImage, ImageProvider } from "../src/lib/images/provider";
+import { installFakeStock } from "./helpers/stock";
 
 /**
  * Envelope dell'agente e percorso Chat → createContent.
  *
  * Il modello locale non produce sempre `{"message", "tool_calls"}`: nei test
  * reali del 26/09 ha emesso `{"action", "params"}` e `{}`. Qui il provider AI
- * è uno script finto (nessuna chiamata a Ollama) e il provider immagini è un
- * doppione (nessuna chiamata a Magnific, nessun consumo di crediti).
+ * è uno script finto (nessuna chiamata a Ollama), il provider stock è un
+ * doppione che risponde a ogni ricerca per destinazione e il provider immagini
+ * è un doppione che non genera mai: nessuna chiamata a Magnific, nessun
+ * consumo di crediti.
  */
 
 /** Provider AI finto: una risposta prefissata per ogni round, in ordine. */
@@ -122,6 +126,8 @@ async function runScripted(userMessage: string, replies: string[]) {
   const images = new FakeImageProvider();
   setAiProvider(ai);
   setImageProvider(images);
+  // Il visual del DRAFT arriva dalla libreria stock: doppione, nessuna rete.
+  installFakeStock();
 
   const events: AgentStreamEvent[] = [];
   const result = await runAgent({
@@ -133,13 +139,19 @@ async function runScripted(userMessage: string, replies: string[]) {
   const toolEvents = events.filter((e): e is ToolEvent => e.type === "tool");
   const finalEvents = events.filter((e): e is FinalEvent => e.type === "final");
 
-  /** `data` dell'ultimo createContent eseguito in questa conversazione. */
-  const toolData = async (toolName: string): Promise<Record<string, unknown>> => {
-    const row = await prisma.chatMessage.findFirst({
+  /**
+   * `data` di un createContent eseguito in questa conversazione.
+   *
+   * `index` è 0-based e conta dalla creazione più recente: serve quando un
+   * turno esegue più `createContent` e i loro dati vanno confrontati.
+   */
+  const toolData = async (toolName: string, index = 0): Promise<Record<string, unknown>> => {
+    const rows = await prisma.chatMessage.findMany({
       where: { conversationId: conversation.id, role: "TOOL", toolName },
       orderBy: { createdAt: "desc" },
     });
-    assert.ok(row, `il tool ${toolName} deve aver lasciato il proprio messaggio`);
+    const row = rows[index];
+    assert.ok(row, `il tool ${toolName} deve aver lasciato almeno ${index + 1} messaggi`);
     const parsed = JSON.parse(row.content) as { data?: Record<string, unknown> };
     return parsed.data ?? {};
   };
@@ -158,8 +170,15 @@ before(async () => {
 after(async () => {
   setAiProvider(null);
   setImageProvider(null);
+  setStockProvider(null);
   // Prima dei contenuti: `deleteContent` azzera `contentId` e il legame
-  // con i job andrebbe perso.
+  // con i job andrebbe perso. Gli asset stock nati con il DRAFT vanno via
+  // insieme a loro.
+  for (const id of contentIds) {
+    await prisma.contentAsset
+      .deleteMany({ where: { contentId: id } })
+      .catch(() => {});
+  }
   await jobOwnership.deleteOwned(contentIds);
   for (const id of contentIds.splice(0)) {
     await deleteContent(id).catch(() => {});
@@ -293,10 +312,31 @@ test("parametri non validi: il tool non viene eseguito e l'errore è leggibile",
     JSON.stringify({ message: "Piattaforma non valida." }),
   ]);
 
-  assert.equal(toolEvents.length, 1);
+assert.equal(toolEvents.length, 1);
   assert.equal(toolEvents[0].name, "createContent");
   assert.equal(toolEvents[0].ok, false);
-  assert.match(String(toolEvents[0].error), /Parametri non validi/);
+  // L'errore che finisce in chat non è un referto di validazione: nomina il
+  // tool, i campi e i messaggi dello schema, che sono cose interne. Dice che cosa
+  // è successo e che cosa fare, e basta.
+  const error = String(toolEvents[0].error);
+  assert.match(error, /richiesta era incompleta/i, `errore: ${error}`);
+  assert.doesNotMatch(error, /createContent|TWITTER|invalid_type|expected/i, error);
+});
+
+test("gli errori di esecuzione non mostrano nomi di tool né dettagli di schema", async () => {
+  // Ogni errore che arriva all'utente passa dalla stessa regola: un utente
+  // chiede un contenuto, non una diagnosi del protocollo.
+  const { toolEvents } = await runScripted("crea un post per TWITTER", [
+    JSON.stringify({
+      tool_calls: [
+        { name: "createContent", arguments: { title: "[TEST] invalido", platforms: ["TWITTER"] } },
+      ],
+    }),
+  ]);
+  const error = String(toolEvents[0].error ?? "");
+  assert.notEqual(error, "", "il tool fallisce e dichiara il motivo");
+  assert.doesNotMatch(error, /Parametri non validi per|invalid_type|platforms/i, error);
+  assert.doesNotMatch(error, /createContent/, "il nome del tool non è un messaggio per l'utente");
 });
 
 test("senza oggetto argomenti l'envelope legacy non inventa una call", async () => {
@@ -344,13 +384,14 @@ test("CASO REALE: 'Crea un post Instagram/Facebook per una proposta Calabria' ar
     "INSTAGRAM",
   ]);
 
-  // 3. il DRAFT è completo di testo e piattaforme, SENZA visual generato
+  // 3. il DRAFT è completo di testo, piattaforme e visual recuperato dallo stock
   const data = await toolData("createContent");
   contentIds.push(String(data.id));
   assert.equal(data.topic, "proposta Calabria");
-  assert.equal(data.withMedia, false, "createContent non deve generare immagini");
-  assert.equal(data.assetId, null, "nessun asset generato");
-  assert.equal(images.calls.length, 0, "Magnific non deve mai essere chiamato da qui");
+  assert.equal(data.withMedia, true, "il DRAFT nasce col suo visual");
+  assert.equal(typeof data.assetId, "string", "l'asset dello stock è dichiarato");
+  assert.equal(data.stockQuery, "Calabria", "la ricerca parte dalla destinazione");
+  assert.equal(images.calls.length, 0, "nessun immagine generata da qui");
 
   const content = await getContent(String(data.id));
   assert.ok(content);
@@ -359,15 +400,198 @@ test("CASO REALE: 'Crea un post Instagram/Facebook per una proposta Calabria' ar
     content.platforms.map((p) => p.platform).sort(),
     ["FACEBOOK", "INSTAGRAM"]
   );
-  assert.equal(content.assets.length, 0, "il DRAFT resta senza visual");
+  assert.equal(content.assets.length, 1, "il DRAFT non resta senza visual");
   assert.ok((content.caption ?? "").length > 0, "la copy c'è comunque");
 
   // 4. il turno si chiude dopo la creazione: il modello non viene richiamato
   //    per continuare a ragionare e creare altri contenuti.
   assert.equal(ai.calls.length, 1, "un solo round di modello per la creazione");
   assert.equal(finalEvents.length, 1);
-  assert.match(finalEvents[0].text, new RegExp(String(data.id)));
-  assert.match(finalEvents[0].text, /Ho chiuso il turno qui/);
+  // La risposta finale all'utente non porta l'id del database: l'utente non
+  // cerca contenuti per identificatore, e il messaggio del tool è la conferma
+  // che vede. L'id resta nei dati del tool, dove il modello può leggerlo.
+  assert.doesNotMatch(
+    finalEvents[0].text,
+    /cmu[a-z0-9]{10,}/i,
+    "la chat non mostra identificatori di database"
+  );
+  assert.equal(data.id !== undefined, true, "l'id resta nei dati del tool");
+});
+
+test("MULTI-POST: due destinazioni nella stessa frase producono due DRAFT", async () => {
+  // Il caso segnalato: "un post su Ibiza e un post su Mallorca" era letto come
+  // una richiesta sola, perché il totale era il massimo delle quantità (1 e 1)
+  // e il secondo post veniva respinto come duplicato.
+  const before = await prisma.content.count();
+  const { toolEvents, finalEvents, toolData } = await runScripted(
+    "Crea un post su Ibiza e un post su Mallorca",
+    [
+      JSON.stringify({
+        message: "Creo entrambi i post.",
+        tool_calls: [
+          {
+            name: "createContent",
+            arguments: { topic: "proposta Ibiza", type: "POST", platforms: ["INSTAGRAM"] },
+          },
+          {
+            name: "createContent",
+            arguments: { topic: "proposta Mallorca", type: "POST", platforms: ["INSTAGRAM"] },
+          },
+        ],
+      }),
+    ]
+  );
+
+  const creates = toolEvents.filter((e) => e.name === "createContent");
+  assert.equal(creates.length, 2, "entrambe le chiamate restano visibili");
+  // Il criterio: nessuna delle due è stata bloccata. Il tetto esiste per fermare
+  // i duplicati, non per impedire un multi-post.
+  assert.equal(creates[0].ok, true, String(creates[0].error ?? ""));
+  assert.equal(creates[1].ok, true, `il secondo post non deve essere bloccato: ${creates[1].error}`);
+  assert.doesNotMatch(
+    String(creates[1].error ?? ""),
+    /già (creato|stat[o] creato) in questo turno/i,
+    "due destinazioni diverse non sono un duplicato"
+  );
+
+  assert.equal(
+    await prisma.content.count(),
+    before + 2,
+    "entrambi i post devono esistere: la richiesta ne elencava due"
+  );
+
+  // Strutture diverse: due post identici non sarebbero due post.
+  // `createContent` senza catalogo dichiara il formato che l'agente ha assegnato.
+  const latest = await toolData("createContent", 0) as { editorialFormat?: string | null };
+  const previous = await toolData("createContent", 1) as { editorialFormat?: string | null };
+  assert.notEqual(
+    latest.editorialFormat,
+    previous.editorialFormat,
+    "l'agente assegna un formato diverso a ciascun post"
+  );
+
+  // E la chiusura del turno è una frase pulita.
+  assert.equal(finalEvents.length, 1);
+  assert.match(finalEvents[0].text, /2/);
+  assert.doesNotMatch(finalEvents[0].text, /cmu[a-z0-9]{10,}/i, "nessun id in chat");
+});
+
+test("MULTI-POST: ogni post della stessa richiesta segue la matrice del suo formato", async () => {
+  // La regola dei formati vale in un multi-post esattamente come in un post
+  // singolo: il tetto del turno non può essere la scusa per copiare la stessa
+  // struttura due volte, e nessuno dei due titoli può essere una formula.
+  const idsBefore = new Set(
+    (await prisma.content.findMany({ select: { id: true } })).map((r) => r.id)
+  );
+
+  const { toolEvents } = await runScripted("Crea un post su Formentera e un post su Mallorca", [
+    JSON.stringify({
+      message: "Creo entrambi.",
+      tool_calls: [
+        {
+          name: "createContent",
+          arguments: { topic: "proposta Formentera", type: "POST", platforms: ["INSTAGRAM"] },
+        },
+        {
+          name: "createContent",
+          arguments: { topic: "proposta Mallorca", type: "POST", platforms: ["INSTAGRAM"] },
+        },
+      ],
+    }),
+  ]);
+
+  const creates = toolEvents.filter((e) => e.name === "createContent");
+  assert.equal(creates.length, 2);
+  assert.equal(creates[1].ok, true, String(creates[1].error));
+
+  const rows = await prisma.content.findMany({
+    where: { id: { notIn: [...idsBefore] } },
+    select: { id: true, title: true, caption: true },
+  });
+  contentIds.push(...rows.map((r) => r.id));
+  assert.equal(rows.length, 2, "entrambi i post devono esistere");
+
+  for (const row of rows) {
+    const title = row.title ?? "";
+    const place = title.includes("Mallorca") ? "Mallorca" : "Formentera";
+    assert.match(title, new RegExp(place, "i"), `${title} deve nominare ${place}`);
+    assert.doesNotMatch(
+      title,
+      /proposta di viaggio|la nostra proposta|da vivere con calma|vacanza in/i,
+      `titolo generico: ${title}`
+    );
+    assert.match(row.caption ?? "", new RegExp(place, "i"), "la caption parla del suo luogo");
+    assert.ok((row.caption ?? "").length > 20, "la caption non è vuota");
+  }
+
+  // E i due post non sono lo stesso testo con un altro titolo.
+  assert.notEqual(rows[0].caption, rows[1].caption, "due destinazioni, due copy diverse");
+});
+
+test("CHAT SILENZIOSA: un turno con tool lascia una sola riga in cronologia", async () => {
+  // Il requisito è che l'utente veda solo la conferma. Ogni messaggio in più è
+  // una stringa di avanzamento: il narratore di un tool, un'etichetta, un
+  // contatore di round. Qui si verifica l'effetto finale sul database, che è
+  // ciò che l'utente ricarica a schermo.
+  const before = await prisma.chatMessage.count();
+  const { finalEvents } = await runScripted(
+    "Crea un post su Formentera e un post su Mallorca",
+    [
+      JSON.stringify({
+        // Due frasi di avanzamento: una per tool. Nessuna delle due deve
+        // arrivare in chat.
+        message: "Cerco le proposte nel catalogo.",
+        tool_calls: [
+          { name: "searchCatalog", arguments: { query: "Formentera" } },
+          {
+            name: "createContent",
+            arguments: { topic: "proposta Formentera", type: "POST", platforms: ["INSTAGRAM"] },
+          },
+          {
+            name: "createContent",
+            arguments: { topic: "proposta Mallorca", type: "POST", platforms: ["INSTAGRAM"] },
+          },
+        ],
+      }),
+    ]
+  );
+
+  const conversationId = conversationIds[conversationIds.length - 1];
+  const rows = await prisma.chatMessage.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "asc" },
+  });
+  const assistants = rows.filter((r) => r.role === "ASSISTANT");
+
+  // Una richiesta dell'utente, una risposta dell'assistente.
+  assert.equal(assistants.length, 1, `una sola risposta finale: ${assistants.map((a) => a.content).join(" | ")}`);
+  assert.equal(finalEvents.length, 1, "un solo messaggio finale emesso");
+  assert.equal(
+    assistants[0].content,
+    finalEvents[0].text,
+    "la riga in chat è esattamente il messaggio finale"
+  );
+  assert.doesNotMatch(
+    assistants[0].content,
+    /Cerco le proposte|advance|tool|round/i,
+    "nessuna stringa di avanzamento in chat"
+  );
+  // Gli strumenti eseguiti restano tracciati: la chat è silenziosa, il registro no.
+  assert.ok(rows.some((r) => r.role === "TOOL"), "gli esiti dei tool restano in cronologia");
+  assert.ok(before > 0);
+});
+
+test("MULTI-POST: la richiesta conta le destinazioni senza numero", async () => {
+  // Il tetto del turno viene dalla richiesta: se contasse una sola unità, il
+  // secondo post sarebbe bloccato come duplicato.
+  assert.equal(parseRequestedContentCount("Crea un post su Ibiza e un post su Mallorca"), 2);
+  assert.equal(parseRequestedContentCount("un post su Ibiza, un post su Creta, un post a Rodi"), 3);
+  assert.equal(parseRequestedContentCount("post su Ibiza e post su Creta"), 2);
+  assert.equal(parseRequestedContentCount("3 post sulla Grecia"), 3);
+  assert.equal(parseRequestedContentCount("1 Grecia + 1 Maldive"), 2);
+  assert.equal(parseRequestedContentCount("crea un post su Ibiza"), 1);
+  // Una quantità esplicita non si somma alle ripetizioni della parola.
+  assert.equal(parseRequestedContentCount("2 post: Grecia + Maldive"), 2);
 });
 
 test("CASO REALE: 'proposta isola d'Elba' con tool + params e withMedia esplicito", async () => {
@@ -399,13 +623,13 @@ test("CASO REALE: 'proposta isola d'Elba' con tool + params e withMedia esplicit
 
   const data = await toolData("createContent");
   contentIds.push(String(data.id));
-  assert.equal(data.withMedia, false, "nessun visual generato");
-  assert.equal(data.assetId, null);
-  assert.equal(images.calls.length, 0, "Magnific non viene chiamato");
+  assert.equal(data.withMedia, true, "il visual arriva dallo stock");
+  assert.equal(typeof data.assetId, "string");
+  assert.equal(images.calls.length, 0, "nessuna generazione immagini");
 
   const content = await getContent(String(data.id));
   assert.ok(content);
-  assert.equal(content.assets.length, 0, "il DRAFT resta senza visual");
+  assert.equal(content.assets.length, 1, "il DRAFT non resta senza visual");
   assert.match(content.caption ?? "", /elba/i, "la copy resta sul topic");
   assert.deepEqual(foreignIn(content.caption ?? ""), []);
 });
@@ -450,11 +674,11 @@ test("envelope moderno: 'Crea un post Instagram/Facebook per una proposta Calabr
 
   const data = await toolData("createContent");
   contentIds.push(String(data.id));
-  assert.equal(data.withMedia, false, "createContent non genera immagini");
+  assert.equal(data.withMedia, true, "createContent recupera il visual dallo stock");
   assert.equal(images.calls.length, 0, "nessuna chiamata al provider immagini");
   const content = await getContent(String(data.id));
   assert.ok(content);
-  assert.equal(content.assets.length, 0);
+  assert.equal(content.assets.length, 1);
   assert.match(content.caption ?? "", /calabria/i);
   assert.deepEqual(foreignIn(content.caption ?? ""), []);
 });
@@ -562,7 +786,10 @@ test("deleteContent senza il campo confirm: la conferma non può essere aggirata
   assert.equal(toolEvents.length, 1);
   assert.equal(toolEvents[0].name, "deleteContent");
   assert.equal(toolEvents[0].ok, false);
-  assert.match(String(toolEvents[0].error), /Parametri non validi|conferma/i);
+// Senza `confirm` lo schema rifiuta la chiamata, ma l'utente non legge un
+  // referto di validazione: legge che la richiesta era incompleta. Ciò che conta,
+  // e che resta verificato qui, è che il contenuto non è stato toccato.
+  assert.match(String(toolEvents[0].error), /richiesta era incompleta|conferma/i);
   assert.ok(await getContent(draft.id), "il contenuto deve esistere ancora");
 });
 
@@ -614,7 +841,7 @@ test("la cronologia non conserva l'envelope JSON interno", async () => {
     where: { conversationId: conversation.id },
     orderBy: { createdAt: "asc" },
   });
-  const assistants = rows.filter((r) => r.role === "ASSISTANT");
+const assistants = rows.filter((r) => r.role === "ASSISTANT");
   assert.ok(assistants.length > 0, "la risposta finale deve essere salvata");
   for (const row of assistants) {
     assert.doesNotMatch(
@@ -623,6 +850,23 @@ test("la cronologia non conserva l'envelope JSON interno", async () => {
       `l'envelope interno non deve finire in cronologia: ${row.content}`
     );
   }
+
+  // La chat è silenziosa: per una richiesta e una risposta deve esserci una
+  // sola bollicina dell'assistente. La frase che accompagna una tool call
+  // ("Guardo le approvazioni.") è il narratore di un passaggio interno e non
+  // viene salvata: in chat compariva come una risposta seguita, più in basso,
+  // da quella vera.
+  assert.deepEqual(
+    assistants.map((row) => row.content),
+    ["Ecco cosa c'è da approvare."],
+    "in chat deve restare solo la risposta finale"
+  );
+  // Gli esiti dei tool invece restano registrati: servono al modello nei turni
+  // successivi e al team per capire che cosa è successo.
+  assert.ok(
+    rows.some((r) => r.role === "TOOL"),
+    "gli esiti dei tool restano in cronologia"
+  );
   // il risultato del tool resta tracciato
   assert.ok(rows.some((r) => r.role === "TOOL" && r.toolName === READ_TOOL));
 });
@@ -774,7 +1018,10 @@ test("updateContent non viene usato per creare: senza contentId il tool fallisce
   assert.equal(toolEvents.length, 1);
   assert.equal(toolEvents[0].name, "updateContent");
   assert.equal(toolEvents[0].ok, false);
-  assert.match(String(toolEvents[0].error), /Parametri non validi/);
+  // Il messaggio non nomina il tool né il campo mancante: sono dettagli interni.
+  // Dice che la richiesta era incompleta, che è l'unica cosa utile all'utente.
+  assert.match(String(toolEvents[0].error), /richiesta era incompleta/i);
+  assert.doesNotMatch(String(toolEvents[0].error), /updateContent|contentId/i);
 });
 
 /* ------------------------------------------------------------------------- *
@@ -830,8 +1077,8 @@ test("A. 'Crea un post Instagram/Facebook per una proposta Calabria' usa SOLO cr
 
   const data = await toolData("createContent");
   contentIds.push(String(data.id));
-  assert.equal(data.withMedia, false, "createContent non genera immagini AI");
-  assert.equal(data.assetId, null, "nessun asset generato");
+  assert.equal(data.withMedia, true, "createContent non genera immagini AI");
+  assert.equal(typeof data.assetId, "string", "l'asset dello stock è dichiarato");
   assert.equal(data.topic, "proposta Calabria");
 
   const content = await getContent(String(data.id));
@@ -841,8 +1088,8 @@ test("A. 'Crea un post Instagram/Facebook per una proposta Calabria' usa SOLO cr
     content.platforms.map((p) => p.platform).sort(),
     ["FACEBOOK", "INSTAGRAM"]
   );
-  assert.equal(content.assets.length, 0, "il DRAFT resta senza visual");
-  assert.equal(images.calls.length, 0, "Magnific non deve mai essere chiamato");
+  assert.equal(content.assets.length, 1, "il DRAFT nasce col visual recuperato");
+  assert.equal(images.calls.length, 0, "nessun immagine generata");
 
   // Copy di fallback: non vuota, non banale, coerente col'argomento.
   const caption = content.caption ?? "";
@@ -924,12 +1171,12 @@ test("D. 'Crea un post per Isola d'Elba' usa SOLO createContent e non inventa de
   const data = await toolData("createContent");
   contentIds.push(String(data.id));
   assert.equal(data.topic, "Isola d'Elba");
-  assert.equal(data.withMedia, false);
+  assert.equal(data.withMedia, true);
   assert.equal(images.calls.length, 0, "nessuna generazione di immagini");
 
   const content = await getContent(String(data.id));
   assert.ok(content);
-  assert.equal(content.assets.length, 0, "il DRAFT resta senza visual");
+  assert.equal(content.assets.length, 1, "il DRAFT nasce col visual recuperato");
   const caption = content.caption ?? "";
   assert.ok(caption.trim().length > 0, "la caption non può essere vuota");
   assert.match(caption, /elba/i, "la caption deve restare sul topic");
@@ -1109,7 +1356,9 @@ test("H. una seconda createContent nello stesso run viene bloccata (1 richiesta 
   // 2a. il duplicato è bloccato, non eseguito
   assert.equal(toolEvents[1].name, "createContent");
   assert.equal(toolEvents[1].ok, false, "la seconda creazione deve essere bloccata");
-  assert.match(String(toolEvents[1].error ?? ""), /già creato in questo turno/);
+  assert.match(String(toolEvents[1].error ?? ""), /già stato creato in questo turno/);
+  // Il blocco non espone identificatori: questo testo finisce in chat.
+  assert.doesNotMatch(String(toolEvents[1].error ?? ""), /cmu[a-z0-9]{10,}/i);
 
   // 2b. i tool di testo sono bloccati: la copy è già stata creata
   assert.equal(toolEvents[2].name, "generateCaption");
@@ -1150,21 +1399,32 @@ test("H. una seconda createContent nello stesso run viene bloccata (1 richiesta 
   assert.equal(created.length, 1, "una richiesta non può creare più di un Content");
   assert.equal(created[0].status, "DRAFT", "il Content creato è un DRAFT");
   assert.ok(created[0].title, "il DRAFT deve avere un titolo");
+  // Il titolo è il nome del luogo, non il topic: "Proposta Calabria" è la
+  // richiesta, "Calabria" è la destinazione, e solo la seconda sta su un post.
   assert.match(
     created[0].title,
-    /^Proposta Calabria\b/,
-    "il titolo deve partire dal topic richiesto"
+    /^Calabria\b/,
+    "il titolo deve essere il nome della destinazione richiesta"
+  );
+  assert.doesNotMatch(
+    created[0].title,
+    /proposta di viaggio|la nostra proposta|da vivere con calma/i,
+    "il titolo non può essere una formula generica"
   );
 
   // 2e. nessuna immagine AI generata e turno chiuso
   assert.equal(images.calls.length, 0, "Magnific non deve essere chiamato");
   assert.equal(ai.calls.length, 1, "il turno si chiude dopo la creazione");
   assert.equal(finalEvents.length, 1);
-  assert.match(finalEvents[0].text, /Ho chiuso il turno qui/);
+  // La chiusura è la sola frase del tool: nessuna istruzione aggiuntiva, che
+  // l'utente non ha chiesto e che non servirebbe a nulla.
+  assert.equal(
+    finalEvents[0].text,
+    "Post creato con successo in stato DRAFT. Lo trovi nella sezione Contenuti."
+  );
 });
 
-test("il contratto dichiara createContent come unico tool di creazione", () => {
-  const REPO = process.cwd();
+test("il contratto dichiara createContent come unico tool di creazione", () => {  const REPO = process.cwd();
   const read = (p: string) => readFileSync(join(REPO, p), "utf8");
   const generation = read("src/lib/ai/tools/generation.ts");
   const content = read("src/lib/ai/tools/content.ts");
@@ -1182,8 +1442,13 @@ test("il contratto dichiara createContent come unico tool di creazione", () => {
   assert.match(content, /non serve alcun contentId/);
   // Il sorgente è un literal TypeScript: le virgolette interne sono escaped,
   // quindi il backslash è opzionale nel pattern.
-  assert.match(content, /SENZA catalogo \(solo \\?"topic\\?"\): qui NON genera immagini AI/);
-  assert.match(content, /Chiamalo una sola volta per richiesta/);
+  assert.match(content, /SENZA catalogo \(solo \\?"topic\\?"\): il visual viene SEMPRE recuperato/);
+  // La generazione è il ripiego, non il primo percorso, e va dichiarata.
+  assert.match(content, /il visual viene GENERATO con il provider immagini/);
+  // Il numero di post richiesto è vincolante: una chiamata per post, tutti
+  // nello stesso turno, e solo per un solo post ci si ferma a una chiamata.
+  assert.match(content, /puoi chiamarlo PIÙ VOLTE nello stesso turno/);
+  assert.match(content, /Per un solo post basta una chiamata/);
 });
 
 test("il SYSTEM_PROMPT è gerarchico, compatto e senza regole duplicate", () => {
@@ -1221,35 +1486,43 @@ test("il SYSTEM_PROMPT è gerarchico, compatto e senza regole duplicate", () => 
   assert.match(agent, /Titolo e caption distinti/);
   assert.match(agent, /Non inventarli/);
 
-  // Una richiesta = un contenuto, e nessuna immagine AI automatica fuori dal
-  // catalogo: il divieto vale per il ramo legacy, non per il Catalog Flow.
-  assert.match(agent, /Chiamalo una sola volta per richiesta/);
-  assert.match(agent, /Senza catalogo createContent NON genera immagini/);
-  assert.match(
-    agent,
-    /Senza catalogo createContent NON genera immagini: il DRAFT resta senza visual/
-  );
+  // Il titolo: la regola che il modello non può violate da solo, perché è la
+  // parte stampata più in grande sul fotogramma.
+  assert.match(agent, /Il titolo contiene SEMPRE il nome della destinazione richiesta/);
+  assert.match(agent, /Formentera/);
+  assert.match(agent, /Mallorca/);
+  assert.match(agent, /I segreti di Formentera/);
+  assert.match(agent, /VIETATO un titolo generico/);
+  assert.match(agent, /vacanza in spiaggia/);
+  // E la struttura della caption segue il formato scelto.
+  assert.match(agent, /3 punti per TRAVEL_TIPS/);
+  assert.match(agent, /una tappa o un\s+giorno per riga per ITINERARY/);
+  assert.match(agent, /domanda e risposta per FAQ/);
+
+  // Una richiesta multipla produce tutti i post, e il visual non è mai
+  // generato: la ricerca nella libreria stock è l'unico percorso.
+  assert.match(agent, /PIÙ POST NELLO STESSO TURNO/);
+  assert.match(agent, /non fermarti al primo/);
+  assert.match(agent, /Per un solo post basta una chiamata/);
+  assert.match(agent, /createContent NON genera immagini AI/);
+  assert.match(agent, /nessun post resta senza visual/);
   assert.match(agent, /solo se l'utente la chiede esplicitamente/);
 
-  // La stessa sezione dichiara anche il ramo catalogo, che materializza il
-  // visuale: senza questa riga il prompt si contraddirebbe.
-  assert.match(agent, /Con "fromCatalog": true il visuale è già pronto/);
-  assert.match(agent, /Il DRAFT di catalogo nasce completo: il visuale usa l'immagine ufficiale/);
-  assert.match(
+  // Nessun vincolo di catalogo è rimasto nel prompt: la creazione non dipende
+  // dall'esistenza della destinazione nel Catalogo.
+  assert.doesNotMatch(agent, /## CATALOGO/);
+  assert.doesNotMatch(agent, /NON creare il DRAFT/);
+  assert.doesNotMatch(agent, /SEMPRE prima searchCatalog/);
+  assert.doesNotMatch(agent, /Non usare mai la tua memoria sul catalogo/);
+  assert.doesNotMatch(
     agent,
-    /Se il visuale non si può materializzare non viene creato alcun DRAFT/
+    /Prima di dirlo devi aver chiamato searchCatalog in questo turno/
   );
 
-  // Regressione sul bug reale: con qwen3:8b il modello rispondeva "Cipro non
-  // è presente nel Catalogo" senza chiamare searchCatalog, pur essendo Cipro
-  // una proposta ACTIVE. La ricerca è resa obbligatoria e il divieto di usare
-  // la memoria sul catalogo è dichiarato due volte (regola generale + catalogo).
-  assert.match(agent, /Non usare mai la tua memoria sul catalogo/);
-  assert.match(agent, /SEMPRE prima searchCatalog con "query"/);
-  assert.match(
-    agent,
-    /Prima di dirlo devi aver chiamato searchCatalog in questo turno e aver visto zero risultati/
-  );
+  // E la regola opposta è dichiarata: qualsiasi destinazione produce i contenuti.
+  assert.match(agent, /Qualsiasi destinazione o argomento è ammesso/);
+  assert.match(agent, /crea SEMPRE i contenuti richiesti/);
+  assert.match(agent, /Nessun controllo di catalogo blocca la creazione/);
 
   // Nessuna regola ripetuta: contiamo le due che in passato si duplicavano.
   const count = (needle: string) => agent.split(needle).length - 1;
@@ -1264,9 +1537,9 @@ test("il SYSTEM_PROMPT è gerarchico, compatto e senza regole duplicate", () => 
     "il vincolo sul topic non deve essere ripetuto"
   );
   assert.equal(
-    count("senza visual"),
-    2,
-    "la regola 'senza visual' compare una volta in CREAZIONE e una in VISUAL"
+    count("PIÙ POST NELLO STESSO TURNO"),
+    1,
+    "la regola dei più post nello stesso turno deve comparire una volta sola"
   );
 });
 

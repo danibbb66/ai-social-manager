@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { publishContent } from "@/lib/services/publish";
 import { logAudit } from "@/lib/audit";
+import { logAIError } from "@/lib/logger";
+import { friendlyMessage } from "@/lib/errors/user-message";
 import { AiTool } from "@/lib/ai/tools/types";
 
 export const publishContentTool: AiTool = {
@@ -35,7 +37,8 @@ export const publishContentTool: AiTool = {
       await logAudit("PUBLISH_VIA_AI", "Content", parsed.contentId, { res: res.ok });
       return { ok: res.ok, message: res.message, data: { jobId: res.jobId } };
     } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      logAIError("tool.publishContent", { contentId: parsed.contentId }, e);
+      return { ok: false, message: friendlyMessage(e) };
     }
   },
 };

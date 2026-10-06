@@ -8,15 +8,17 @@ import { generateImageTool } from "../src/lib/ai/tools/generation";
 import { createCarouselTool } from "../src/lib/ai/tools/carousel";
 import { platformsField, hashtagsField } from "../src/lib/ai/tools/schemas";
 import { AI_TOOLS, getTool, toolsSystemDescription } from "../src/lib/ai/tools/registry";
-import { setImageProvider } from "../src/lib/images/factory";
+import { setImageProvider, setStockProvider } from "../src/lib/images/factory";
 import { ImageProvider } from "../src/lib/images/provider";
+import { installFakeStock } from "./helpers/stock";
 
 /**
- * createContent ora genera il visual del DRAFT. Nei test il provider è un
- * doppione che NON genera: nessuna chiamata di rete, nessun consumo di crediti
- * e i test restano deterministici. La verifica del percorso di generazione
- * (prompt → provider → Media Library → Content) sta in
- * tests/content-creation-media.test.ts.
+ * createContent porta a terra anche il visual del DRAFT: lo recupera dalla
+ * libreria stock, quindi qui il provider stock è un doppione (nessuna rete,
+ * nessun consumo di crediti) mentre il provider immagini NON genera: serve
+ * solo a dimostrare che il percorso di generazione non viene toccato. La
+ * verifica del percorso di stock (ricerca → layout → Media Library → Content)
+ * sta in tests/content-creation-media.test.ts.
  */
 class NoopImageProvider implements ImageProvider {
   readonly name = "test-noop";
@@ -40,6 +42,13 @@ async function cleanup() {
       // già eliminato
     }
   }
+  for (const id of createdIds) {
+    // Gli asset stock nati con il DRAFT: via prima del contenuto, altrimenti
+    // `deleteContent` li lascia senza `contentId` e non si riconoscono più.
+    await prisma.contentAsset
+      .deleteMany({ where: { contentId: id } })
+      .catch(() => {});
+  }
   for (const id of createdIds.splice(0)) {
     try {
       await deleteContent(id);
@@ -51,11 +60,13 @@ async function cleanup() {
 
 before(async () => {
   setImageProvider(new NoopImageProvider());
+  installFakeStock();
   await cleanup();
 });
 
 after(async () => {
   setImageProvider(null);
+  setStockProvider(null);
   await cleanup();
 });
 
@@ -167,7 +178,7 @@ test("per un post completo l'output finale resta DRAFT e nessuna transizione vie
   assert.equal(content.status, "DRAFT");
   assert.equal(content.caption?.includes("Parigi"), true);
   assert.equal(content.hashtags, "#parigi #weekend #romantico");
-  assert.equal(content.assets.length, 1);
+  assert.equal(content.assets.length, 2, "visual stock + asset creato dal test");
   assert.equal(content.approvals.length, 0);
 
   const approvals = await prisma.approval.count({ where: { contentId: data.id } });

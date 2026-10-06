@@ -7,8 +7,9 @@ import { prisma } from "../src/lib/prisma";
 import { runAgent, SYSTEM_PROMPT, type AgentStreamEvent } from "../src/lib/ai/agent";
 import { setAiProvider } from "../src/lib/ai/factory";
 import { setImageProvider } from "../src/lib/images/factory";
-import { deleteUploadedFile } from "../src/lib/uploads";
+import { deleteUploadedFile, saveUploadedFile } from "../src/lib/uploads";
 import type { GeneratedImage, ImageProvider, ImageUpload } from "../src/lib/images/provider";
+import sharp from "sharp";
 import type {
   AiChatMessage,
   AiCompletion,
@@ -17,6 +18,10 @@ import type {
 } from "../src/lib/ai/provider";
 import { getOrCreateConversation } from "../src/lib/services/chat";
 import { deleteContent } from "../src/lib/services/content";
+import {
+  CATALOG_CREATIVE_ORIGIN,
+  type AnyCatalogVisualMetadata,
+} from "../src/lib/services/catalog-visual";
 import { getTool } from "../src/lib/ai/tools/registry";
 import {
   searchCatalogForAi,
@@ -99,30 +104,48 @@ const WEBP = Buffer.concat([
 ]);
 
 /**
- * Provider immagini che non può funzionare, e lo dichiara.
+ * Provider immagini che registra ogni generazione e produce una foto vera.
  *
- * Tutte le proposte di questa suite hanno un'immagine ufficiale, quindi
- * l'unico risultato corretto è zero chiamate: se il flusso di catalogo
- *degenerasse in generazione, questi test fallirebbero invece di passare
- * producendo post con immagini inventate.
+ * La base del visuale di un post di catalogo è sempre una fotografia generata:
+ * la locandina del fornitore non diventa mai il post, quindi qui la generazione
+ * è attesa, non un incidente. Il file deve essere decodificabile perché il
+ * servizio lo compone sotto il template con `sharp`.
  */
-class ForbiddenImageProvider implements ImageProvider {
+class SpyImageProvider implements ImageProvider {
   readonly name = "magnific";
   canGenerate = true;
   calls: string[] = [];
 
   async generateImage(prompt: string): Promise<GeneratedImage> {
     this.calls.push(prompt);
-    throw new Error("questa suite non deve generare immagini: le proposte hanno un originale");
+    const saved = await saveUploadedFile({
+      buffer: PHOTO,
+      originalName: `magnific-${this.calls.length}.jpg`,
+      mimeType: "image/jpeg",
+    });
+    uploadedUrls.push(saved.url);
+    return {
+      url: saved.url,
+      provider: this.name,
+      pathname: saved.pathname,
+      mimeType: saved.mimeType,
+      size: saved.size,
+      sourceUrl: `https://cdn-magnific.freepik.com/gen/${this.calls.length}.jpg`,
+    };
   }
 
   async saveUploadedFile(file: ImageUpload): Promise<GeneratedImage> {
     this.calls.push(`saveUploadedFile:${file.originalName}`);
-    throw new Error("questa suite non deve caricare file: usa il downloader");
+    throw new Error("questa suite non deve caricare file: usa il downloader o la generazione");
   }
 }
 
-let imageProvider: ForbiddenImageProvider;
+let imageProvider: SpyImageProvider;
+
+/** La fotografia generata: un'immagine vero e propria, non un header finto. */
+let PHOTO: Buffer = Buffer.alloc(0);
+/** File scritti dal provider finto: vanno ripuliti a fine suite. */
+const uploadedUrls: string[] = [];
 
 function stubImageFetch(): void {
   (globalThis as { fetch: unknown }).fetch = async () =>
@@ -226,9 +249,15 @@ async function draftCount(): Promise<number> {
 
 before(async () => {
   baselineFiles = await listUploads();
-  imageProvider = new ForbiddenImageProvider();
+  imageProvider = new SpyImageProvider();
   setImageProvider(imageProvider);
   stubImageFetch();
+
+  PHOTO = await sharp({
+    create: { width: 1600, height: 1200, channels: 3, background: "#6b4f8f" },
+  })
+    .jpeg({ quality: 92 })
+    .toBuffer();
 
   const source = await prisma.catalogSource.create({
     data: {
@@ -319,6 +348,22 @@ after(async () => {
   for (const asset of assets) {
     await deleteUploadedFile(asset.url).catch(() => {});
   }
+  // Le locandine del fornitore restano in Media Library con `contentId` nullo,
+  // quindi `deleteContent` non le tocca: senza questo passaggio la suite
+  // lascerebbe righe e file che non saprebbe più spiegare.
+  // Il filtro è fatto in memoria e non in query: il metadata è un JSON e
+  // SQLite non lo indicizza per chiave, quindi interrogare tutte le righe per
+  // poi scartarne il 99% sarebbe il modo costoso di ottenere la stessa risposta.
+  const free = await prisma.contentAsset.findMany({
+    where: { contentId: null },
+    select: { id: true, url: true, metadata: true },
+  });
+  for (const asset of free) {
+    const origin = (asset.metadata as { origin?: string } | null)?.origin;
+    if (origin !== "catalog-flyer-source") continue;
+    await deleteUploadedFile(asset.url).catch(() => {});
+    await prisma.contentAsset.delete({ where: { id: asset.id } }).catch(() => {});
+  }
   // `Set`: lo stesso DRAFT può essere stato registrato da più test.
   for (const id of ids) {
     await deleteContent(id).catch(() => {});
@@ -374,8 +419,21 @@ test("1. una destinazione presente nel Catalogo produce esattamente un DRAFT", a
     where: { id },
     include: { assets: true },
   });
-  assert.equal(withVisual!.assets.length, 1, "l'originale del catalogo è il visuale del DRAFT");
+  assert.equal(withVisual!.assets.length, 1, "il visuale è la creatività composta, una sola");
   assert.equal(result.data!.assetId, withVisual!.assets[0].id);
+  // Il visuale è la nostra creatività: non è la locandina del catalogo, che
+  // resta in Media Library con `contentId` nullo.
+  const visualMeta = withVisual!.assets[0].metadata as unknown as AnyCatalogVisualMetadata;
+  assert.equal(visualMeta.origin, CATALOG_CREATIVE_ORIGIN);
+  assert.equal(visualMeta.template, "social-creative-v1");
+  assert.ok(visualMeta.brandMark !== null, "il marchio dell'agenzia è stampato");
+  if (visualMeta.source.localAssetId) {
+    const flyer = await prisma.contentAsset.findUniqueOrThrow({
+      where: { id: visualMeta.source.localAssetId },
+      select: { contentId: true },
+    });
+    assert.equal(flyer.contentId, null, "la locandina del fornitore non è allegata al post");
+  }
   const linked = await prisma.content.findUnique({
     where: { id },
     include: { catalogProposal: { include: { source: true } } },
@@ -410,7 +468,11 @@ test("3. una destinazione assente dal Catalogo non produce nessun DRAFT", async 
   const search = await callTool("searchCatalog", { query: ABSENT_DESTINATION });
   assert.equal(search.ok, false, "la ricerca deve dichiarare l'assenza");
   assert.match(search.message, /Nessuna proposta del Catalogo/);
-  assert.match(search.message, /Non creare contenuti/);
+  assert.match(
+    search.message,
+    /non blocca nulla/,
+    "la ricerca non deve più ordinare di non creare contenuti"
+  );
 
   const created = await createContentTool().execute({
     fromCatalog: true,
@@ -501,6 +563,48 @@ test("5. senza durata in catalogo la copy non cita giorni o notti", async () => 
   }
 });
 
+test("5c. TRAVEL_TIPS è strutturato a punti e ancorato ai dati reali", async () => {
+  const { proposals } = await searchCatalogForAi({ query: FULL_DESTINATION });
+  const rich = proposals.find((p) => p.id === fullId)!;
+  const copy = catalogCopyFromProposal(rich, "TRAVEL_TIPS");
+
+  // I consigli sono una struttura: senza le voci a punti un post di consigli si
+  // legge come un hero, perché la differenza è nel corpo e non nel titolo.
+  const bullets = copy.caption.split("\n").filter((l) => l.trim().startsWith("•"));
+  assert.ok(bullets.length >= 2, `servono almeno due consigli, trovati: ${copy.caption}`);
+  assert.ok(bullets.length <= 3, "tre è il massimo leggibile su un quadrato");
+
+  // Ogni consiglio è ancorato a un dato della proposta: un consiglio generico
+  // ("porta gli occhiali") sarebbe una promessa non mantenuta.
+  for (const line of bullets) {
+    assert.doesNotMatch(
+      line,
+      /occhiali|crema|banana|scarpe consul/i,
+      `consiglio non ancorato a un dato: ${line}`
+    );
+  }
+  assert.match(copy.caption, /890/, "il consiglio sul prezzo cita il dato vero");
+
+  // Il titolo dichiara l'angolazione invece di ripetere il luogo: è ciò che
+  // distingue un post di consigli da uno sulla stessa destinazione.
+  assert.notEqual(
+    copy.title.trim(),
+    FULL_DESTINATION,
+    "il titolo non può essere solo il nome della destinazione"
+  );
+  assert.ok(copy.title.trim().length > 8, "il titolo dice che cosa è il post");
+
+  // Su una proposta senza dati la struttura resta, ma senza numeri inventati.
+  const { proposals: bareProposals } = await searchCatalogForAi({ query: BARE_DESTINATION });
+  const bare = bareProposals.find((p) => p.id === bareId)!;
+  const bareTips = catalogCopyFromProposal(bare, "TRAVEL_TIPS");
+  assert.ok(
+    bareTips.caption.split("\n").some((l) => l.trim().startsWith("•")),
+    "la struttura a punti vale anche senza dati commerciali"
+  );
+  assert.doesNotMatch(bareTips.caption, PRICE_TOKENS, `caption: ${bareTips.caption}`);
+});
+
 test("4b. con dati reali la copy li usa e non li inventa", async () => {
   const { proposals } = await searchCatalogForAi({ query: FULL_DESTINATION });
   const full = proposals.find((p) => p.id === fullId)!;
@@ -512,7 +616,15 @@ test("4b. con dati reali la copy li usa e non li inventa", async () => {
   const copy = catalogCopyFromProposal(full, format);
   assert.equal(copy.usesCommercialData, true);
   assert.match(copy.caption, /890/);
-  assert.match(copy.caption, /EUR/);
+  // Il prezzo si scrive in euro, non in codice: è `commercial-format` a
+  // stamparlo, lo stesso codice che compone il fotogramma, e "890 EUR" in un
+  // post è la colonna del catalogo, non un prezzo che si legge.
+  assert.match(copy.caption, /890\s*€/);
+  assert.doesNotMatch(copy.caption, /\bEUR\b/, "il codice valuta non finisce nella copy");
+  // La data si scrive in italiano, non in ISO: "20-25 Dicembre" e non
+  // "2026-12-20", che è un valore di database e non una data pronunciabile.
+  assert.match(copy.caption, /20-25\s*Dicembre/);
+  assert.doesNotMatch(copy.caption, /\d{4}-\d{2}-\d{2}/, "le date non si stampano in ISO");
   assert.match(copy.caption, /5 notti/);
   assert.doesNotMatch(copy.caption, /\d+\s*giorni/i, "le notti non diventano giorni");
 });
@@ -546,12 +658,17 @@ test("6. una proposta senza dati commerciali non può usare OFFER, ITINERARY o F
     platforms: ["INSTAGRAM"],
   }) as { ok: boolean; data?: Record<string, unknown> };
   const id = String(result.data!.id);
-  contentIds.push(id);
   assert.notEqual(result.data!.editorialFormat, "OFFER");
   assert.ok(
     (result.data!.warnings as string[]).some((w) => /non usabile/.test(w)),
     "il rifiuto del format deve essere rendicato"
   );
+
+  // Questo DRAFT usa un formato diverso da quello scelto da solo, quindi ha un
+  // visuale diverso (vedi il test sulla pluralità per formato): è una bozza a
+  // sé e viene rimossa subito, perché qui il punto è il rifiuto di OFFER e non
+  // la conservazione del contenuto.
+  await deleteContent(id);
 });
 
 test("6b. la scelta del format è deterministica e varia sulla stessa proposta", async () => {
@@ -612,7 +729,11 @@ test("7. la direzione visual usa l'immagine ufficiale del catalogo", async () =>
   const visualFromTool = result.data!.visualDirection as { useOfficialImage: boolean; officialImageUrl: string };
   assert.equal(visualFromTool.useOfficialImage, true);
   assert.equal(visualFromTool.officialImageUrl, BARE_IMAGE);
-  assert.equal(result.data!.visualOrigin, "catalog-official", "il visuale è l'originale del catalogo");
+  assert.equal(
+    result.data!.visualOrigin,
+    "catalog-social-creative",
+    "il visuale è la creatività dell'agenzia, non l'originale del catalogo"
+  );
   assert.equal(result.data!.withMedia, true, "il DRAFT nasce con il visuale");
   assert.equal(typeof result.data!.assetId, "string");
 
@@ -620,9 +741,22 @@ test("7. la direzione visual usa l'immagine ufficiale del catalogo", async () =>
     where: { id },
     include: { assets: true },
   });
-  assert.equal(draft!.assets.length, 1, "un solo visuale, quello ufficiale");
+  assert.equal(draft!.assets.length, 1, "un solo visuale: quello composto");
   assert.equal(draft!.assets[0].id, result.data!.assetId);
-  assert.equal(imageProvider.calls.length, 0, "con l'originale non si genera nulla");
+  // Il visuale è la creatività composta: la sua base è una fotografia generata
+  // dal provider, non il file del catalogo. Si confronta per appartenenza e non
+  // per posizione perché la suite ha generato anche per le altre richieste.
+  const draftMeta = draft!.assets[0].metadata as unknown as AnyCatalogVisualMetadata;
+  assert.ok(
+    imageProvider.calls.includes(draftMeta.generatedPhoto.prompt),
+    "il fotogramma poggia su una fotografia realmente generata"
+  );
+  assert.match(draftMeta.generatedPhoto.prompt, /Testonia/, "la foto è sul tema della destinazione");
+  assert.doesNotMatch(
+    draftMeta.generatedPhoto.prompt,
+    /ripresa dall'originale/i,
+    "il prompt non promette una ripresa della locandina, che non verrà fornita"
+  );
 });
 
 test("7b. senza immagine ufficiale la direzione visual chiede una generazione futura", () => {
@@ -933,7 +1067,7 @@ test("9. una seconda createContent nello stesso turno resta bloccata", async () 
   assert.equal(creates.length, 2, "entrambe le chiamate restano visibili");
   assert.equal(creates[0].ok, true, creates[0].error ?? "");
   assert.equal(creates[1].ok, false, "la seconda non viene eseguita");
-  assert.match(String(creates[1].error ?? ""), /già creato in questo turno/);
+  assert.match(String(creates[1].error ?? ""), /già stato creato in questo turno/);
 
   // Nessun DRAFT in più: il guard ferma la seconda chiamata e la prima, sulla
   // stessa proposta, riusa il visuale già materializzato invece di duplicarlo.
@@ -1015,12 +1149,17 @@ test("9b. ripetere la stessa proposta riusa il DRAFT esistente invece di duplica
 
   // Il riuso deve essere dichiarato, non silenzioso: il modello deve poterlo
   // riferire all'utente e capire che le piattaforme richieste non ci sono.
+  // Nel `data` c'è il flag, nel messaggio c'è la frase che lo dice all'utente.
   const reusedFlag = Boolean(second.data!.visualReused);
   const secondId = String(second.data!.id);
   if (secondId === row!.id) {
     assert.equal(reusedFlag, true, "il riuso va dichiarato in visualReused");
-    assert.match(second.message, /riutilizzato/);
-    assert.match(second.message, /nessun secondo contenuto/i);
+    assert.match(second.message, /bozza|già/i, "il messaggio dice che era già pronto");
+    assert.doesNotMatch(
+      second.message,
+      /creato con successo/i,
+      "un riuso non è una creazione: dirlo sarebbe falso"
+    );
   }
 
   const assets = await prisma.contentAsset.findMany({ where: { contentId: row!.id } });
@@ -1100,8 +1239,11 @@ test("il tool di ricerca è registrato, dichiarato e read-only", async () => {
   const tool = getTool("searchCatalog");
   assert.ok(tool, "searchCatalog deve essere nel registry");
   assert.match(tool.description, /Catalogo Agenzia/);
-  assert.match(tool.description, /PRIMA di createContent/);
-  assert.match(tool.description, /NON devi creare il DRAFT/);
+  // La ricerca non è più un prerequisito della creazione né un divieto:
+  // è una lettura opzionale che non blocca la chat.
+  assert.match(tool.description, /lettura opzionale e mai bloccante/);
+  assert.doesNotMatch(tool.description, /PRIMA di createContent/);
+  assert.doesNotMatch(tool.description, /NON devi creare il DRAFT/);
 
   // sola lettura: nessuna scrittura, quindi nessun DRAFT
   const before = await draftCount();
@@ -1118,30 +1260,47 @@ test("il tool di ricerca è registrato, dichiarato e read-only", async () => {
   assert.equal(bare.officialImage?.url, BARE_IMAGE);
 });
 
-test("il prompt dichiara il catalogo come fonte dei post", () => {
-  assert.match(SYSTEM_PROMPT, /## CATALOGO/);
-  assert.match(SYSTEM_PROMPT, /fonte di verità per i post/);
-  assert.match(SYSTEM_PROMPT, /searchCatalog/);
-  assert.match(SYSTEM_PROMPT, /fromCatalog/);
-  assert.match(SYSTEM_PROMPT, /NON creare il DRAFT/);
+test("il prompt non mette più il Catalogo come vincolo alla chat", () => {
+  // Nessun blocco residuo: la sezione di catalogo è stata rimossa e con lei
+  // ogni ordine di non creare contenuti su una destinazione assente.
+  assert.doesNotMatch(SYSTEM_PROMPT, /## CATALOGO/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /fonte di verità per i post/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /NON creare il DRAFT/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /SEMPRE prima searchCatalog/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /memoria sul catalogo/);
+
+  // La regola opposta: qualsiasi destinazione produce comunque i contenuti.
+  assert.match(SYSTEM_PROMPT, /Qualsiasi destinazione o argomento è ammesso/);
+  assert.match(SYSTEM_PROMPT, /crea SEMPRE i contenuti richiesti/);
+  assert.match(SYSTEM_PROMPT, /Nessun controllo di catalogo blocca la creazione/);
 });
 
 test("il contratto di createContent descrive il visuale come parte del DRAFT di catalogo", () => {
   const tool = getTool("createContent");
   assert.ok(tool, "createContent deve essere nel registry");
 
-  // L'ordine della procedura: prima si cerca, poi si crea.
-  assert.match(tool.description, /cerca prima con searchCatalog/);
+  // Nessun prerequisito di catalogo: la creazione parte dal topic richiesto,
+  // l'ancoraggio a una proposta è un'opzione esplicita dell'utente.
+  assert.match(tool.description, /senza verificare l'esistenza della destinazione nel Catalogo/);
+  assert.doesNotMatch(tool.description, /cerca prima con searchCatalog/);
+  assert.doesNotMatch(tool.description, /NON crea nulla e non devi inventare/);
   assert.match(tool.description, /"fromCatalog": true/);
   assert.match(tool.description, /catalogProposalId/);
 
-  // La promessa del visuale, nelle sue tre parti: DRAFT completo, originale
-  // se c'è, generazione altrimenti, e nessun DRAFT a metà in caso di errore.
+  // La promessa del visuale, nelle sue parti: DRAFT completo, visuale che è
+  // una creatività dell'agenzia e non la locandina del fornitore, e nessun
+  // DRAFT a metà in caso di errore.
   assert.match(tool.description, /DRAFT nasce COMPLETO, visuale incluso/);
-  assert.match(tool.description, /immagine ufficiale valida viene scaricata e usata/);
-  assert.match(tool.description, /altrimenti il visual viene generato dal provider immagini configurato/);
-  assert.match(tool.description, /Se il visuale non può essere materializzato non viene creato alcun DRAFT/);
+  assert.match(tool.description, /Il visuale è SEMPRE una vostra creatività e non la locandina del catalogo/);
+  assert.match(tool.description, /fotografia ad alta risoluzione generata sul tema della destinazione/);
+  assert.match(tool.description, /template grafico dell'agenzia/);
+  assert.match(tool.description, /vostro logo \(o il wordmark con il nome dell'agenzia\)/);
+  assert.match(tool.description, /La locandina del fornitore non viene usata come immagine né allegata al post/);
+  assert.match(tool.description, /Se il visuale non può essere composto non viene creato alcun DRAFT/);
   assert.match(tool.description, /ok:false con il motivo/);
+  // La formulazione vecchia prometteva che la locandina sarebbe stata usata
+  // come visuale: è esattamente il comportamento da non avere più.
+  assert.doesNotMatch(tool.description, /immagine ufficiale valida viene scaricata e usata/);
 
   // `withMedia` non è un interruttore: resta per compatibilità e non viene
   // presentato come il modo per ottenere un'immagine.
@@ -1152,8 +1311,14 @@ test("il contratto di createContent descrive il visuale come parte del DRAFT di 
     "la frase descriveva il tool intero: era falso per il flusso catalogo"
   );
 
-  // Il ramo senza catalogo mantiene il suo significato: nessuna immagine.
-  assert.match(tool.description, /SENZA catalogo \(solo "topic"\): qui NON genera immagini AI/);
+  // Il ramo senza catalogo mantiene il suo significato: la libreria stock è
+  // la prima fonte, e la generazione è il ripiego quando la libreria è vuota.
+  assert.match(tool.description, /SENZA catalogo \(solo "topic"\): il visual viene SEMPRE recuperato/);
+  assert.match(tool.description, /il visual viene GENERATO con il provider immagini/);
+  assert.match(
+    tool.description,
+    /il tool ti dice esplicitamente che l'immagine è generata e non reale/
+  );
 
   // Le stesse promesse devono arrivare allo stesso modello che legge gli
   // argomenti, non solo nella description del tool.

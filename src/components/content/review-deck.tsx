@@ -278,6 +278,13 @@ export function ReviewDeck({
   const doApprove = useCallback(() => {
     const item = current;
     if (!item || pending || exitingRef.current) return;
+    // Click su metà card e frecce della tastiera devono rispettare lo stesso
+    // gate del pulsante "Approva": senza questo l'azione partiva comunque e
+    // il rifiuto del server restava senza alcun feedback per l'utente.
+    if (!item.caption || item.caption.trim().length === 0) {
+      setError("La caption è obbligatoria per approvare.");
+      return;
+    }
     setError(null);
     approve(item.id, undefined, () => advance("right"));
   }, [advance, approve, current, pending, setError]);
@@ -287,7 +294,12 @@ export function ReviewDeck({
       const item = current;
       if (!item || pending || exitingRef.current) return;
       setError(null);
-      reject(item.id, note, () => advance("left"));
+      reject(item.id, note, () => {
+        // Chiude il dialog: senza questa chiusura restava aperto sopra la
+        // card successiva anche dopo un rifiuto riuscito.
+        setAskReject(false);
+        advance("left");
+      });
     },
     [advance, current, pending, reject, setError]
   );
@@ -653,6 +665,7 @@ export function ReviewDeck({
       <RejectReasonDialog
         open={askReject}
         busy={pending}
+        error={error}
         onClose={() => setAskReject(false)}
         onConfirm={doReject}
       />

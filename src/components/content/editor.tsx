@@ -149,6 +149,29 @@ export function ContentEditor({
   };
 
   /**
+   * Ripristina i campi sui valori arrivati dal server.
+   *
+   * Serve quando si annulla la modifica: senza questo, i valori digitati
+   * restavano nello stato locale e continuavano a pilotare i gate di
+   * approvazione/pubblicazione (es. una caption scritta ma mai salvata
+   * rendeva "Approva" abilitato mentre in database la caption era vuota).
+   */
+  const resetForm = () => {
+    setTitle(content.title ?? "");
+    setCaption(content.caption ?? "");
+    setHashtags(content.hashtags ?? "");
+    setType(content.type);
+    setPlatforms(new Set(content.platforms.map((p) => p.platform)));
+    setScheduledDate(
+      content.scheduledDate
+        ? toDateTimeLocal(new Date(content.scheduledDate))
+        : ""
+    );
+    setActionError(null);
+    setActionMessage(null);
+  };
+
+  /**
    * Chiusura dei pannelli dopo un'azione riuscita.
    *
    * Non chiamiamo router.refresh(): ogni action usata da runAction revalida già
@@ -317,6 +340,7 @@ export function ContentEditor({
                 <Input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
+                  readOnly={!editing}
                   placeholder="Titolo breve del post…"
                 />
               </Field>
@@ -386,23 +410,31 @@ export function ContentEditor({
                 </div>
               </Field>
 
-              <div className="flex items-center gap-2 border-t border-slate-100 pt-4">
-                <Button
-                  variant="secondary"
-                  onClick={() => setEditing(false)}
-                  disabled={pending}
-                >
-                  Annulla
-                </Button>
-                <Button onClick={save} disabled={pending || !editing}>
-                  {pending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4" />
-                  )}
-                  Salva modifiche
-                </Button>
-              </div>
+              {/* Azioni visibili solo in modifica: fuori dalla modifica
+                  "Annulla" non avrebbe nulla da annullare e "Salva" sarebbe
+                  un pulsante permanentemente disabilitato senza spiegazione. */}
+              {editing ? (
+                <div className="flex items-center gap-2 border-t border-slate-100 pt-4">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      resetForm();
+                      setEditing(false);
+                    }}
+                    disabled={pending}
+                  >
+                    Annulla
+                  </Button>
+                  <Button onClick={save} disabled={pending}>
+                    {pending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    Salva modifiche
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </Card>
 

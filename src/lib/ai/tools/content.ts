@@ -10,12 +10,9 @@ import {
 import { AiTool, contentBriefView } from "@/lib/ai/tools/types";
 import { platformsField, hashtagsField } from "@/lib/ai/tools/schemas";
 import { fallbackCopyFromTopic } from "@/lib/ai/content-copy";
+import { attachStockVisual } from "@/lib/ai/content-stock";
 import { resolveCatalogProposalForAi } from "@/lib/services/catalog-ai";
-import {
-  CATALOG_VISUAL_ORIGIN,
-  materializeCatalogVisual,
-  type CatalogVisualOrigin,
-} from "@/lib/services/catalog-visual";
+import { materializeCatalogVisual } from "@/lib/services/catalog-visual";
 import {
   CONTENT_FORMATS,
   availableFormats,
@@ -45,7 +42,7 @@ const createSchema = z.object({
     .boolean()
     .optional()
     .describe(
-      "true = il contenuto nasce dal Catalogo Agenzia: testo, formato editoriale e visual derivano da una proposta reale, e il DRAFT viene creato con il visuale già a terra (immagine ufficiale del catalogo se è valida, altrimenti generato dal provider immagini configurato). Se il visuale non si può materializzare non viene creato alcun DRAFT. Usalo SEMPRE per i post su una destinazione dell'agenzia, e anche quando l'utente non ha indicato una destinazione precisa."
+      "true = il contenuto nasce dal Catalogo Agenzia: testo e formato editoriale derivano da una proposta reale, e il DRAFT viene creato con il visuale già a terra. Il visuale NON è la locandina del catalogo (quella è promozionale del fornitore e porta il suo logo): è una fotografia ad alta risoluzione generata sulla destinazione, con il template grafico dell'agenzia, il vostro logo/wordmark e i dati dell'offerta. Se il visuale non si può comporre non viene creato alcun DRAFT. Usalo SEMPRE per i post su una destinazione dell'agenzia, e anche quando l'utente non ha indicato una destinazione precisa."
     ),
   destination: z
     .string()
@@ -57,7 +54,7 @@ const createSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Id esatto della propostaCatalogo, preso da searchCatalog. Ha la precedenza su destination ed evita ogni ambiguità sulla selezione."
+      "Id esatto della proposta di Catalogo, preso da searchCatalog. Ha la precedenza su destination ed evita ogni ambiguità sulla selezione."
     ),
   format: z
     .enum(CONTENT_FORMATS)
@@ -88,12 +85,6 @@ const updateSchema = z.object({
   scheduledDate: z.string().nullable().optional().describe("Data ISO per la programmazione"),
 });
 
-/** Come si dice all'utente da dove viene il visuale del DRAFT. */
-const VISUAL_ORIGIN_LABEL: Record<CatalogVisualOrigin, string> = {
-  [CATALOG_VISUAL_ORIGIN]: "immagine ufficiale del catalogo",
-  magnific: "immagine generata dal provider immagini (magnific)",
-};
-
 /**
  * Creazione ancorata a una proposta reale del Catalogo, visuale compreso.
  *
@@ -104,15 +95,16 @@ const VISUAL_ORIGIN_LABEL: Record<CatalogVisualOrigin, string> = {
  *    prezzo o date, il testo non li nomina e il format non può essere OFFER;
  * 3. il visuale nasce insieme al DRAFT. Qui non viene creato nessun Content:
  *    la persistenza è delegata a `materializeCatalogVisual`, che porta a terra
- *    il file (originale scaricato oppure generato dal provider immagini) e
- *    scrive contenuto e asset nella stessa transazione. Un DRAFT senza visuale
- *    non deve esistere, quindi non deve esistere nemmeno per un istante;
- * 4. il DRAFT resta collegato alla proposta, così risale a fonte, pagina e
- *    tipo di provenienza, e il visual dichiara se è l'originale dell'agenzia o
- *    un'immagine generata: due cose diverse, da non presentare come uguali.
+ *    la fotografia generata, la compone con il template dell'agenzia e scrive
+ *    contenuto e asset nella stessa transazione. Un DRAFT senza visuale non deve
+ *    esistere, quindi non deve esistere nemmeno per un istante;
+ * 4. il DRAFT resta collegato alla proposta e dichiara da quale immagine del
+ *    catalogo arrivano i dati, ma **il visuale non è quella immagine**: è la
+ *    creatività dell'agenzia, e la locandina del fornitore resta fuori dagli
+ *    asset del contenuto.
  *
- * Questa funzione orchestra e basta. Download, generazione, scelta della
- * fonte del visuale, transazione, rollback e idempotenza stanno nel servizio:
+ * Questa funzione orchestra e basta. Download, generazione, composizione,
+ * scelta della fonte, transazione, rollback e idempotenza stanno nel servizio:
  * ripeterle qui darebbe al catalogo due versioni della stessa logica da tenere
  * allineate, e il giorno in cui cambiano i dati del visuale una delle due
  * mentirebbe.
@@ -157,14 +149,20 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
     );
   }
 
-  // 1. Il visuale, e con esso il DRAFT. Il servizio sceglie la fonte (originale
-  //    o generazione), porta a terra il file e poi scrive tutto insieme.
+  // 1. Il visuale, e con esso il DRAFT. Il servizio genera la fotografia,
+  //    compone il fotogramma con il template dell'agenzia e scrive tutto
+  //    insieme; l'originale del catalogo resta fuori, come provenienza.
   const materialized = await materializeCatalogVisual({
     proposal,
     direction: visualDirection,
     copy,
     platforms: parsed.platforms,
     type: parsed.type,
+    // Fissare la proposta per id è una richiesta esatta: un DRAFT preesistente
+    // è la sua ripetizione idempotente e va dichiarata in `reused`. Risolta per
+    // destinazione, il DRAFT è quella della destinazione: nessun riuso di un'
+    // altra, nessuna dichiarazione.
+    pinnedById: Boolean(parsed.catalogProposalId?.trim()),
   });
 
   if (!materialized.ok) {
@@ -175,8 +173,8 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
       message:
         `Nessun contenuto creato: ${materialized.message} ` +
         (materialized.needsGeneration
-          ? "Se l'utente vuole comunque un post, proponigli un'altra proposta del Catalogo che abbia già un'immagine."
-          : "Non sostituire mai l'originale con un'immagine generata: riferisci il problema all'utente."),
+          ? "Se l'utente vuole comunque un post, proponigli un'altra proposta del Catalogo."
+          : "Non aggirare il problema con un'immabricata: riferiscilo all'utente."),
       data: {
         catalogFailure: materialized.reason,
         createdContentId: null,
@@ -204,19 +202,25 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
         status: materialized.content.status,
       };
 
+  const reused = materialized.reused;
+
   return {
     ok: true,
-    message:
-      `Contenuto "${materialized.content.title}" ` +
-      `${materialized.reused ? "riutilizzato" : "creato"} ` +
-      `(id ${materialized.content.id}, stato ${materialized.content.status}) ` +
-      `dalla proposta di catalogo "${proposal.name}" ` +
-      `(formato ${format}, visual: ${VISUAL_ORIGIN_LABEL[materialized.origin]}, ` +
-      `asset ${materialized.asset.id}). ` +
-      (materialized.reused
-        ? "Il visuale di questa proposta era già pronto: nessun secondo contenuto è stato creato. "
-        : "") +
-      `Attenzione: ${warnings.join("; ")}.`,
+    // Il messaggio che l'agente rilegge all'utente: due frasi, niente altro.
+    //
+    // Prima qui finivano id, formato, origine del visuale, id dell'asset e la
+    // lista dei warning. Erano log di esecuzione, non un messaggio: l'utente
+    // che chiede "crea un post" vuole sapere se è stato creato e dove trovarlo,
+    // non com'è stata scattata l'immagine. I dettagli restano in `data`, dove
+    // il modello li legge se servono e l'utente no.
+    //
+    // Il riuso ha una frase sua perché è un fatto, non un dettaglio: se l'utente
+    // chiede due post e ne ottiene uno, dirgli "creato con successo" sarebbe
+    // una risposta falsa. Il nome della proposta resta, perché è l'unica parte
+    // del messaggio che l'utente può non aver in testa.
+    message: reused
+      ? `Esisteva già una bozza per "${proposal.name}": non ne ho creata un'altra.`
+      : "Post creato con successo in stato DRAFT. Lo trovi nella sezione Contenuti.",
     data: {
       ...brief,
       catalogProposalId: proposal.id,
@@ -232,6 +236,13 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
       visualReused: materialized.reused,
       withMedia: true,
       assetId: materialized.asset.id,
+      // Dichiarato perché il modello non dica all'utente "post con la locandina
+      // del catalogo": il fotogramma è nostro, e i dati dell'offerta arrivano
+      // dalla proposta.
+      visualTemplate: materialized.metadata.template,
+      printedTitle: materialized.metadata.printedTitle,
+      brandMark: materialized.metadata.brandMark,
+      offerDataPrinted: materialized.metadata.commercialLines,
       commercialFieldsPresent: proposal.commercialFieldsPresent,
       provenance: {
         sourceUrl: proposal.sourceUrl,
@@ -247,24 +258,25 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
 export const createContentTool: AiTool = {
   name: "createContent",
   description:
-    "Crea un nuovo Content in DRAFT: titolo, caption, hashtag e piattaforme. È il tool da usare quando l'utente chiede di creare un post, un reel o un contenuto: non serve alcun contentId, perché il contenuto è nuovo. " +
-    "FLUSSO CATALOGO (per i post dell'agenzia): cerca prima con searchCatalog quando serve individuare la proposta, poi chiama questo tool con \"fromCatalog\": true e \"destination\", oppure con \"catalogProposalId\" se l'hai già. Il testo, il formato editoriale e il visual derivano dalla proposta reale, e il DRAFT nasce COMPLETO, visuale incluso: se la proposta ha un'immagine ufficiale valida viene scaricata e usata, altrimenti il visual viene generato dal provider immagini configurato. Se il visuale non può essere materializzato non viene creato alcun DRAFT: il tool ti restituisce ok:false con il motivo, e tu non devi riprovare a creare un contenuto a metà. Se la destinazione non è nel catalogo, il tool NON crea nulla e non devi inventare l'offerta. " +
-    "\"withMedia\" è un parametro legacy/compatibilità: non controlla il visuale del flusso catalogo, non passarlo e non aspettarti che produca nulla. " +
-    "SENZA catalogo (solo \"topic\"): qui NON genera immagini AI, il DRAFT resta senza visual e si completa dalla Media Library; usa generateImage solo se l'utente chiede esplicitamente un'immagine. " +
-    "Passa sempre \"topic\" con l'argomento esatto chiesto (es. \"proposta Calabria\"): è un vincolo, titolo, testo e hashtag devono parlare solo di quello. \"platforms\" è SEMPRE un array, es. [\"INSTAGRAM\", \"FACEBOOK\"], mai la stringa. \"type\" è \"POST\" o \"VIDEO\". Chiamalo una sola volta per richiesta e poi riferisciti al contenuto creato. Per i CAROUSEL usa createCarousel. Ritorna l'id del contenuto creato.",
+    "Crea un nuovo Content in DRAFT: titolo, caption, hashtag, piattaforme e visual. È il tool da usare quando l'utente chiede di creare un post, un reel o un contenuto: non serve alcun contentId, perché il contenuto è nuovo. " +
+    "Passa sempre \"topic\" con l'argomento esatto chiesto (es. \"proposta Calabria\"): è un vincolo, titolo, testo e hashtag devono parlare solo di quello. Qualsiasi destinazione o argomento è ammesso, presente o meno nel Catalogo: crea il contenuto richiesto senza verificare l'esistenza della destinazione nel Catalogo. " +
+    "\"platforms\" è SEMPRE un array, es. [\"INSTAGRAM\", \"FACEBOOK\"], mai la stringa. \"type\" è \"POST\" o \"VIDEO\". " +
+    "Se l'utente chiede N post (es. \"3 post\", \"1 Grecia + 1 Maldive\") puoi chiamarlo PIÙ VOLTE nello stesso turno, una chiamata per post: ne crea TUTTI senza fermarti al primo. Usa un \"format\" diverso per ciascuno (STORYTELLING, TRAVEL_TIPS, ITINERARY, INSPIRATION, HERO_DESTINATION, FAQ) e un tema/angolazione diversa. Per un solo post basta una chiamata. " +
+    "Per i CAROUSEL usa createCarousel. Ritorna l'id del contenuto creato. " +
+    "SENZA catalogo (solo \"topic\"): il visual viene SEMPRE recuperato cercandolo nella libreria stock (Magnific/Media) in base alla destinazione e applicandovi il layout/template, quindi il DRAFT nasce sempre con il suo visual già collegato. Se la libreria non ha nessuna immagine per quella destinazione, il visual viene GENERATO con il provider immagini su un prompt fotografico: il post non viene bloccato e il tool ti dice esplicitamente che l'immagine è generata e non reale. Se nemmeno la generazione riesce non viene creato alcun DRAFT (ok:false con il motivo), perché nessun post deve restare senza visual. " +
+    "Solo se l'utente chiede esplicitamente di ancorare il contenuto a una proposta del Catalogo passa \"fromCatalog\": true con \"destination\", oppure con \"catalogProposalId\" se l'hai già: il testo e il formato editoriale derivano dalla proposta reale, e il DRAFT nasce COMPLETO, visuale incluso. Il visuale è SEMPRE una vostra creatività e non la locandina del catalogo: una fotografia ad alta risoluzione generata sul tema della destinazione, con il template grafico dell'agenzia, il vostro logo (o il wordmark con il nome dell'agenzia) e i dati dell'offerta che il catalogo contiene davvero. La locandina del fornitore non viene usata come immagine né allegata al post. Se il visuale non può essere composto non viene creato alcun DRAFT: il tool ti restituisce ok:false con il motivo, e tu non devi riprovare a creare un contenuto a metà. " +
+    "\"withMedia\" è un parametro legacy/compatibilità: non controlla il visuale del flusso catalogo, non passarlo e non aspettarti che produca nulla. ",
   brief: "Creazione contenuto",
   schema: createSchema,
   execute: async (args) => {
     const parsed = createSchema.parse(args);
 
-    // Flusso catalogo: attivo se il modello chiede esplicitamente di ancorare
-    // al Catalogo Agenzia, oppure se indica una destinazione o una proposta.
-    // La scelta è applicativa, non affidata al prompt: senza una proposta
-    // reale non nasce nessun DRAFT.
+    // Flusso catalogo: attivo solo con un ancoraggio esplicito (fromCatalog o
+    // id di proposta). La destinazione da sola non lo attiva: una richiesta
+    // qualsiasi, per una destinazione presente o meno nel Catalogo, crea il
+    // DRAFT senza controlli di esistenza sul Catalogo.
     const catalogFlow =
-      parsed.fromCatalog === true ||
-      Boolean(parsed.destination?.trim()) ||
-      Boolean(parsed.catalogProposalId?.trim());
+      parsed.fromCatalog === true || Boolean(parsed.catalogProposalId?.trim());
 
     if (catalogFlow) {
       return createFromCatalog(parsed);
@@ -280,6 +292,9 @@ export const createContentTool: AiTool = {
     });
 
     const warnings: string[] = [];
+    // Va letto subito: più sotto `content` viene riassegnato da `svcUpdate`, che
+    // non riporterebbe le anomalie di relazione.
+    const relationWarnings = content.relationWarnings ?? [];
     const topic =
       parsed.topic?.trim() ||
       parsed.title?.trim() ||
@@ -292,6 +307,11 @@ export const createContentTool: AiTool = {
     //    valorizzato dal modello non viene mai toccato.
     const fallback = fallbackCopyFromTopic({
       topic,
+      // Il formato e la destinazione guidano la struttura di titolo e caption:
+      // senza, un post di consigli e un hero sulla stessa destinazione
+      // produrrebbero lo stesso testo.
+      format: parsed.format ?? null,
+      destination: parsed.destination ?? null,
       title: content.title,
       caption: content.caption,
       hashtags: content.hashtags,
@@ -310,25 +330,89 @@ export const createContentTool: AiTool = {
       );
     }
 
-    // 2. Visual: NON generato, ma solo in questo ramo.
-    //    Il flusso catalogo materializza il visuale prima di creare il DRAFT
-    //    (vedi createFromCatalog): qui, senza proposta, vale la regola storica:
-    //    nessuna immagine AI inventata, nessuna chiamata automatica a
-    //    Magnific, il DRAFT resta senza visual e si arricchisce dalla Media
-    //    Library, oppure con generateImage quando l'utente lo chiede.
+    // 2. Visual: dalla libreria stock; generato solo se la libreria è vuota per
+    //    quella destinazione. Qui non esiste un DRAFT senza immagine: se neppure
+    //    la generazione riesce il contenuto appena scritto viene annullato e il
+    //    tool risponde ok:false, perché "post senza visual" non è uno stato
+    //    valido.
+    const visual = await attachStockVisual({
+      contentId: content.id,
+      destination: parsed.destination ?? null,
+      topic,
+      title: content.title,
+      format: parsed.format ?? null,
+    });
+
+    if (visual.status === "failed") {
+      await svcDelete(content.id);
+      return {
+        ok: false,
+        message:
+          `Nessun contenuto creato: ${visual.reason} ` +
+          `Il DRAFT non è stato scritto, perché nessun post deve restare senza visual.`,
+        data: {
+          createdContentId: null,
+          assetId: null,
+          stockQuery: visual.query,
+          withMedia: false,
+          warnings,
+        },
+      };
+    }
+
+    if (!visual.templateApplied) {
+      warnings.push(
+        "layout/template non applicato alla foto stock: l'immagine è stata collegata così come recuperata."
+      );
+    }
+    // Il marchio è dichiarato sempre, anche quando è il wordmark: un post con
+    // il logo file e un post con il nome dell'agenzia non sono la stessa
+    // creatività, e il modello deve saperlo prima di consigliare all'utente.
+    if (visual.templateApplied && !visual.hasBrandLogo) {
+      warnings.push(
+        "nessun marchio stampato sull'overlay: il brand non ha né un logo caricato né un nome."
+      );
+    }
+    // Un ideaId inesistente non viene scritto: il servizio lo dichiara invece di
+    // far fallire la creazione, e il modello deve saperlo per non ripeterlo.
+    warnings.push(...relationWarnings);
+    if (visual.generated) {
+      // Va detto chiaramente al modello e all'utente: è una fotografia
+      // plausibile, non la foto reale del posto.
+      warnings.push(
+        `visual generato con "${visual.source}" perché la libreria stock non aveva immagini per "${visual.query}": ` +
+          "non è una foto reale del luogo, valuta se tenerlo o sostituirlo con una della libreria."
+      );
+    }
+
     const fresh = await svcGet(content.id);
+
+    // I dettagli che il modello deve poter leggere senza infastidire l'utente.
+    // Stanno qui e non nel messaggio: l'utente chiede "crea un post", non "crea
+    // un post e dimmi da quale provider è arrivata l'immagine". Il modello li
+    // usa per decidere e per rispondere a una domanda di follow-up.
+    const execution = {
+      visualSource: visual.source,
+      visualGenerated: visual.generated,
+      stockQuery: visual.query,
+      template: visual.template,
+      templateApplied: visual.templateApplied,
+      brandMark: visual.brandMark,
+      // La rubrica stampata sul fotogramma: senza, il modello direbbe all'utente
+      // che il post è "sulla destinazione" senza dire che è un consiglio.
+      kicker: visual.kicker,
+    };
 
     return {
       ok: true,
-      message:
-        `Contenuto "${content.title}" creato (id ${content.id}, stato ${content.status}). ` +
-        "Nessuna immagine AI generata: resta senza visual e si completa dalla Media Library." +
-        (warnings.length ? ` Attenzione: ${warnings.join("; ")}.` : ""),
+      message: `Post creato con successo in stato DRAFT. Lo trovi nella sezione Contenuti.`,
       data: {
         ...contentBriefView(fresh ?? content),
         topic: topic || null,
-        withMedia: false,
-        assetId: null,
+        editorialFormat: parsed.format ?? null,
+        withMedia: true,
+        assetId: visual.assetId,
+        ...execution,
         warnings,
       },
     };
@@ -369,7 +453,13 @@ export const getContentTool: AiTool = {
     const parsed = z.object({ contentId: z.string() }).parse(args);
     const content = await svcGet(parsed.contentId);
     if (!content) {
-      return { ok: false, message: `Contenuto ${parsed.contentId} non trovato.` };
+      // L'id resta in `data`: un identificativo di database non aiuta l'utente
+      // a trovare un post e nel testo finirebbe per essere letto come un errore.
+      return {
+        ok: false,
+        message: "Il contenuto indicato non esiste. Controlla l'elenco dei contenuti.",
+        data: { contentId: parsed.contentId },
+      };
     }
     return {
       ok: true,

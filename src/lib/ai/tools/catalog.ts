@@ -41,7 +41,7 @@ export const searchCatalogTool: AiTool = {
   name: "searchCatalog",
   brief: "Ricerca Catalogo Agenzia",
   description:
-    "Cerca nel Catalogo Agenzia le proposte di viaggio realmente pubblicate sul sito. È l'unico modo per scoprire cosa si può promuovere: il catalogo è la fonte di verità e contiene solo proposte esistenti, con la loro provenienza. Usalo PRIMA di createContent quando l'utente chiede un post su una destinazione: passa la destinazione in \"query\" (es. \"Rodi\", \"Maldive\"). Se la destinazione non è nel catalogo, la risposta lo dice e NON devi creare il DRAFT né ricorrere a conoscenze tue. Senza \"query\" restituisce le proposte utilizzabili, ordinate per idoneità. Ogni proposta porta anche quali dati commerciali esistono davvero: se sono assenti, non scrivere prezzi, date, durata o servizi.",
+    "Cerca nel Catalogo Agenzia le proposte di viaggio pubblicate sul sito, con la loro provenienza. È una lettura opzionale e mai bloccante: serve a conoscere le offerte reali, non a decidere se un contenuto può essere creato. Passa la destinazione in \"query\" (es. \"Rodi\", \"Maldive\") oppure omettilo per l'elenco delle proposte utilizzabili, ordinate per idoneità. Ogni proposta porta anche quali dati commerciali esistono davvero: se sono assenti, non scrivere prezzi, date, durata o servizi.",
   schema: z.object({
     query: z
       .string()
@@ -73,7 +73,7 @@ export const searchCatalogTool: AiTool = {
         ok: false,
         message:
           `Nessuna proposta del Catalogo${target}. ` +
-          "Non creare contenuti su questa destinazione: digs all'utente che nel Catalogo attuale non è presente e proponi un'altra destinazione o l'aggiornamento del Catalogo.",
+          "Questa ricerca non blocca nulla: puoi comunque creare il contenuto richiesto passando l'argomento a createContent con \"topic\".",
         data: { total: 0, proposals: [] },
       };
     }

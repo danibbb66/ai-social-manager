@@ -194,9 +194,22 @@ describe("Derivazione della destinazione (regola conservativa)", () => {
     assert.equal(deriveDestination("New York Dicembre"), null);
   });
 
-  test("i titoli segnaposto non hanno destinazione", () => {
+  test("il titolo segnaposto resta riconosciuto e il marchio non diventa luogo", () => {
+    // Il titolo così come l'agenzia lo pubblica resta riconosciuto come
+    // segnaposto: la funzione non cambia, cambia che cosa il parser ne fa.
     assert.equal(isPlaceholderTitle("Nuova Locandina 1"), true);
-    assert.equal(deriveDestination("Nuova Locandina 1"), null);
+
+    // Il marchio non intasa il luogo: tolto dal titolo, il resto è la
+    // destinazione, perché è il resto ad arrivare sul fotogramma del post.
+    assert.equal(deriveDestination("Veratour - Rodi"), "Rodi");
+    assert.equal(deriveDestination("Alpitour Cipro da Milano e Roma"), "Cipro");
+
+    // Un titolo fatto solo di marchio o di materiale promozionale non lascia
+    // nulla: la destinazione resta `null` invece di diventare il nome del
+    // distributore, che su un post dell'agenzia non ci deve essere.
+    assert.equal(deriveDestination("Veratour"), null);
+    assert.equal(deriveDestination("Brochure Bravifondo"), null);
+    assert.equal(deriveDestination("Veratour - Locandina"), null);
   });
 });
 
@@ -224,9 +237,33 @@ describe("Rilevamento anomalie", () => {
     assert.ok(codes(newYork).includes("SHARED_IMAGE"));
   });
 
-  test("segnala i titoli segnaposto", () => {
-    const ph = cards.findIndex((c) => c.name === "Nuova Locandina 1");
-    assert.ok(codes(ph).includes("PLACEHOLDER_TITLE"));
+  test("segnala il marchio tolto dal titolo invece di importarlo", () => {
+    // "locandina" è materiale promozionale, non un luogo: la proposta entra
+    // col titolo ripulito e la rimozione resta dichiarata, così chi rivede
+    // il catalogo non crede che l'agenzia abbia scritto così.
+    const ph = cards.findIndex((c) => c.name === "Nuova 1");
+    assert.ok(ph >= 0, "la card deve essere importata col titolo ripulito dal marchio");
+    assert.equal(
+      cards[ph].rawTitle,
+      "Nuova Locandina 1",
+      "il titolo pubblicato resta tracciato accanto al nome ripulito"
+    );
+    assert.equal(cards[ph].brandingRemoved, true);
+    assert.ok(codes(ph).includes("DISTRIBUTOR_BRAND"));
+
+    // La parola che dichiara il segnaposto va verificata sul titolo pubblicato,
+    // prima che il marchio venga tolto: ripulito, "Nuova Locandina 1" diventa
+    // "Nuova 1" e da solo non dice più che la locandina non è identificata.
+    assert.ok(
+      codes(ph).includes("PLACEHOLDER_TITLE"),
+      "il titolo segnaposto resta riconosciuto anche dopo la rimozione del marchio"
+    );
+
+    // E il titolo di una card che non contiene marchi resta identico: la
+    // rimozione è conservativa, non una normalizzazione.
+    const cipro = cards.findIndex((c) => c.name === "Cipro");
+    assert.equal(cards[cipro].brandingRemoved, false);
+    assert.ok(!codes(cipro).includes("DISTRIBUTOR_BRAND"));
   });
 
   test("segnala il titolo assente e la destinazione mancante", () => {
@@ -382,13 +419,26 @@ describe("Import del catalogo", () => {
     assert.equal(condivise[0].images[0].url, condivise[1].images[0].url);
   });
 
-  test("i placeholder restano visibili e non vengono scartati", async () => {
+  test("i titoli non identificati restano visibili e non vengono scartati", async () => {
     const { proposals } = await importFixture(fixture("https://www.mrhromaboccea.it/"));
-    const ph = proposals.filter((p) => /Nuova Locandina/.test(p.name));
+    // Le due card senza un titolo riconoscibile entrano col titolo ripulito
+    // dal materiale promozionale ("Nuova Locandina 1" → "Nuova 1") e non
+    // vengono scartate: restano ACTIVE e segnalate per la revisione umana.
+    const ph = proposals.filter((p) => /^Nuova \d+$/.test(p.name));
     assert.equal(ph.length, 2);
     for (const proposal of ph) {
-      assert.equal(proposal.destination, null);
       assert.equal(proposal.status, "ACTIVE");
+    }
+
+    // Non promotabili: il titolo non combacia con l'immagine, che è uno dei
+    // codici che bloccano l'uso di una proposta da parte dell'AI.
+    const anomalies = anomaliesForProposals(proposals);
+    for (const proposal of ph) {
+      const codes = (anomalies.get(proposal.id) ?? []).map((a) => a.code);
+      assert.ok(
+        codes.includes("TITLE_IMAGE_MISMATCH"),
+        `${proposal.name}: una locandina non identificata non è usabile`
+      );
     }
   });
 
@@ -400,7 +450,7 @@ describe("Import del catalogo", () => {
     });
     sourceIds.push(first.sourceId);
 
-    // Seconda lettura senza le card segnaposto e senza quella senza titolo.
+    // Seconda lettura senza le due card non identificate e senza quella senza titolo.
     const ridotta = `<div class="locandina-grid">
       <a class="locandina-link" data-title="Cipro"
          href="https://www.mrhromaboccea.it/wp-content/uploads/2026/09/locandina_mainstream-CIPRO_page-0001.webp"></a>
@@ -422,7 +472,7 @@ describe("Import del catalogo", () => {
       include: { images: true },
     });
     assert.equal(mancanti.length, first.cards - 1);
-    assert.ok(mancanti.some((p) => /Nuova Locandina 1/.test(p.name)));
+    assert.ok(mancanti.some((p) => p.name === "Nuova 1"));
     assert.equal(mancanti[0].images.length, 1, "le immagini restano agganciate");
 
     // La card che c'è ancora non deve essere marcata come mancante.
@@ -456,10 +506,50 @@ describe("Statistiche e anomalie dal database", () => {
       [...map.values()].flat().map((a) => a.code)
     );
     assert.ok(codes.has("SHARED_IMAGE"));
-    assert.ok(codes.has("PLACEHOLDER_TITLE"));
     assert.ok(codes.has("TITLE_IMAGE_MISMATCH"));
     assert.ok(codes.has("MISSING_TITLE"));
     assert.ok(codes.has("DESTINATION_MISSING"));
+    assert.ok(
+      codes.has("DISTRIBUTOR_BRAND"),
+      "il marchio tolto deve essere visibile dove si legge il catalogo, non solo nell'import"
+    );
+  });
+
+  test("il titolo segnaposto resta un dato, non una promessa", async () => {
+    // L'import non produce più una riga con questo nome: la parola che lo
+    // segnala ("locandina") è materiale promozionale e viene tolta dal titolo
+    // prima che il nome diventi una proposta. La riga qui è creata come
+    // arriva da una fonte che non ripulisce o da una correzione manuale, e le
+    // anomalie la riconoscono lo stesso: PLACEHOLDER_TITLE si ricalcola dai
+    // dati persistiti, quindi non dipende da come la riga è nata.
+    const { report } = await importFixture(fixture("https://www.mrhromaboccea.it/"));
+    await prisma.catalogProposal.create({
+      data: {
+        name: "Nuova Locandina 9",
+        destination: null,
+        sourceId: report.sourceId,
+        sourceUrl: `${uniqPage()}#locandina-9`,
+        sourceType: "FLYER",
+        extraction: "HTML",
+        confidence: "UNVERIFIED",
+        contentHash: "hash-locandina-9",
+        sourceOrder: 99,
+        images: {
+          create: {
+            url: "https://www.mrhromaboccea.it/wp-content/uploads/2026/07/locandina-9.webp",
+            filename: "locandina-9.webp",
+          },
+        },
+      },
+    });
+
+    const solo = await prisma.catalogProposal.findFirstOrThrow({
+      where: { sourceId: report.sourceId, name: "Nuova Locandina 9" },
+      include: { images: true, source: true },
+    });
+    const codes = (anomaliesForProposals([solo]).get(solo.id) ?? []).map((a) => a.code);
+    assert.ok(codes.includes("PLACEHOLDER_TITLE"));
+    assert.ok(codes.includes("DESTINATION_MISSING"));
   });
 
   test("getCatalogStats conta proposte, immagini e fonti", async () => {

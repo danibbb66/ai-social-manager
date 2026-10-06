@@ -1,6 +1,9 @@
 import { Brand, Prisma } from "@prisma/client";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
+import { sniffMediaMime } from "@/lib/uploads";
 
 export interface BrandInput {
   name?: string;
@@ -81,6 +84,86 @@ export async function updateBrand(input: BrandInput): Promise<Brand> {
   });
 
   return updated;
+}
+
+/**
+ * Marchio dell'agenzia da stampare sull'overlay dei post.
+ *
+ * Due sorgenti, in quest'ordine di precedenza:
+ *
+ *  1. `logo`: il file che l'utente ha caricato in `Brand.logoUrl`. È la
+ *     sorgente forte e va sempre usata quando esiste.
+ *  2. `wordmark`: il nome dell'agenzia (`Brand.name`). Non è un logo inventato
+ *     né un logo di terzi: è il nome di chi produce il post, quindi dichiara
+ *     l'autore senza mettere in circolo un marchio che non è dell'azienda.
+ *
+ * La promessa del template è che ogni post esce con il marchio: senza logo
+ * file il post esce comunque con il wordmark, e `kind` dichiara quale dei due
+ * è stato stampato. Il risultato è `null` solo se non c'è né un logo
+ * leggibile né un nome: in quel caso non viene disegnato nessun segno.
+ *
+ * Il caricamento è memoizzato perché il marchio cambia di rado e la
+ * composizione avviene una volta per post, non una volta per tentativo.
+ * `resetBrandLogoCache` va chiamata quando il brand viene aggiornato a runtime.
+ */
+let brandLogoCache: BrandMark | null | undefined;
+
+/**
+ * Il marchio da stampare, con la sua forma.
+ *
+ * La forma è dichiarata perché cambia ciò che il renderer deve fare: `logo` è
+ * un file da ridimensionare, `wordmark` è una stringa da comporre. Un
+ * oggetto unico con `kind` evita che il chiamante debba chiedere due volte al
+ * database per sapere quale dei due si trova davanti.
+ */
+export type BrandMark =
+  | { kind: "logo"; buffer: Buffer; mimeType: string }
+  | { kind: "wordmark"; name: string };
+
+export async function getBrandMark(): Promise<BrandMark | null> {
+  if (brandLogoCache !== undefined) return brandLogoCache;
+
+  let resolved: BrandMark | null = null;
+  try {
+    const brand = await getBrand();
+    const logoUrl = brand?.logoUrl?.trim();
+    if (logoUrl) {
+      // Solo file già in Media Library: il logo non viene scaricato dalla rete
+      // durante la composizione di un post.
+      const match = logoUrl.match(/^\/uploads\/([a-z]+)\/([^/]+)$/);
+      if (match) {
+        const buffer = await readFile(
+          path.join(process.cwd(), "public", "uploads", match[1], match[2])
+        ).catch(() => null);
+        if (buffer && buffer.length > 0) {
+          resolved = {
+            kind: "logo",
+            buffer,
+            mimeType: sniffMediaMime(buffer) ?? "image/png",
+          };
+        }
+      }
+    }
+    // Il logo file non c'è o non è leggibile: il wordmark è il marchio, non un
+    // ripiego silenzioso. Un brand illeggibile non può impedire la creazione
+    // di un post, quindi l'errore non viene propagato.
+    if (!resolved) {
+      const name = brand?.name?.replace(/\s+/g, " ").trim();
+      if (name) resolved = { kind: "wordmark", name };
+    }
+  } catch {
+    // Il marchio non è un prerequisito: un brand illeggibile non può impedire
+    // la creazione di un post.
+    resolved = null;
+  }
+
+  brandLogoCache = resolved;
+  return resolved;
+}
+
+/** Svuota la cache del marchio, per gli aggiornamenti del brand a runtime e i test. */
+export function resetBrandLogoCache(): void {
+  brandLogoCache = undefined;
 }
 
 /** Testo di contesto brand usato dall'AI per generare contenuti coerenti */

@@ -15,6 +15,18 @@
 import type { CatalogProposalDto } from "@/lib/services/catalog-ai";
 import { hashtagsFromTopic } from "@/lib/ai/content-copy";
 import { normalizeForMatch } from "@/lib/catalog/text";
+import { formatDateRange, formatMoney, formatPriceRange } from "@/lib/catalog/commercial-format";
+import { stripDistributorBranding } from "@/lib/catalog/distributor";
+import { cleanPlaceName } from "@/lib/ai/place-name";
+import {
+  editorialCaption,
+  editorialPoints,
+  editorialTitle,
+  isGenericTitle,
+  titleNamesPlace,
+  type EditorialFacts,
+} from "@/lib/ai/editorial-matrix";
+import { hasCuratedKnowledge, type KnowledgeSource } from "@/lib/ai/travel-knowledge";
 
 export const CONTENT_FORMATS = [
   "HERO_DESTINATION",
@@ -115,42 +127,54 @@ export function pickEditorialFormat(
   return { format: target[hash], warnings };
 }
 
-/** Il luogo su cui scrivere: la destinazione, o il nome se non è stata derivata. */
+/**
+ * Il luogo su cui scrivere: la destinazione, o il nome se non è stata derivata.
+ *
+ * Entrambi vengono ripuliti dal formato editoriale. Anche nel catalogo il
+ * `destination` può contenere la formula della richiesta, perché arriva da una
+ * riga importata da un sito esterno: senza la pulizia il motore dei contenuti
+ * cercava "Travel tips Formentera" nella base di conoscenza, non trovava nulla e
+ * produceva un post povero su un posto che conosceva benissimo.
+ *
+ * La stessa riga che arriva da un sito esterno può portare dentro il nome del
+ * distributore che ha costruito la locandina, e quel nome non è un luogo:
+ * finirebbe nel titolo stampato sul fotogramma, nella ricerca della base di
+ * conoscenza e nel prompt del generatore. Qui viene tolto, e se non rimane un
+ * luogo utilizzabile la funzione restituisce la stringa vuota invece di un nome
+ * che non è nostro.
+ */
 export function placeOf(dto: CatalogProposalDto): string {
-  return dto.destination?.trim() || dto.name.trim();
-}
-
-function money(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  return cleanPlaceName(stripDistributorBranding(dto.destination) ?? "") ||
+    cleanPlaceName(stripDistributorBranding(dto.name) ?? "") ||
+    stripDistributorBranding(dto.destination?.trim()) ||
+    "";
 }
 
 function priceLabel(dto: CatalogProposalDto): string | null {
   const { priceFrom, priceTo, currency } = dto.commercial;
-  const unit = currency?.trim() ? ` ${currency.trim()}` : "";
+  // L'intervallo ha due estremi e si legge "da … a …"; il prezzo singolo è un
+  // numero solo. In entrambi i casi il numero è in italiano e con l'euro: è
+  // `commercial-format` a scriverlo, lo stesso codice che stampa il fotogramma,
+  // perché il dato del post e quello dell'immagine non possono divergere.
   if (isNum(priceFrom) && isNum(priceTo) && priceFrom !== priceTo) {
-    return `da ${money(priceFrom!)}${unit} a ${money(priceTo!)}${unit}`;
+    return `da ${formatMoney(priceFrom, currency)} a ${formatMoney(priceTo, currency)}`;
   }
-  if (isNum(priceFrom)) return `da ${money(priceFrom!)}${unit}`;
-  if (isNum(priceTo)) return `fino a ${money(priceTo!)}${unit}`;
-  return null;
+  const single = formatPriceRange(priceFrom, priceTo, currency);
+  if (single === null) return null;
+  return isNum(priceFrom) ? `da ${single}` : `fino a ${single}`;
 }
 
 function isNum(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function monthName(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
-}
-
 function datesLabel(dto: CatalogProposalDto): string | null {
-  const from = monthName(dto.commercial.periodStart);
-  const to = monthName(dto.commercial.periodEnd);
-  if (from && to && from !== to) return `dal ${from} al ${to}`;
-  if (from) return `dal ${from}`;
+  // Stesse date del fotogramma, nella stessa lingua: "dal 12-19 Settembre" e
+  // non "dal 2026-09-12 al 2026-09-27". Se manca la fine dell'intervallo si
+  // stampa la sola partenza, che è un dato vero e non un'approssimazione.
+  const { periodStart, periodEnd } = dto.commercial;
+  const dates = formatDateRange(periodStart, periodEnd);
+  if (dates) return `dal ${dates}`;
   return dto.commercial.departureCities?.trim() || null;
 }
 
@@ -159,30 +183,26 @@ function durationLabel(dto: CatalogProposalDto): string | null {
   return isNum(nights) ? `${nights} notti` : null;
 }
 
-/** Fatti commerciali realmente presenti, in forma di frase. */
-function commercialFacts(dto: CatalogProposalDto): string[] {
-  const out: string[] = [];
-  const price = priceLabel(dto);
-  if (price) out.push(price);
-  const dates = datesLabel(dto);
-  if (dates) out.push(dates);
-  const duration = durationLabel(dto);
-  if (duration) out.push(duration);
-  if (dto.commercial.included?.trim()) {
-    out.push(`comprende: ${dto.commercial.included.trim()}`);
-  }
-  if (dto.commercial.excluded?.trim()) {
-    out.push(`non comprende: ${dto.commercial.excluded.trim()}`);
-  }
-  return out;
-}
-
-const CTA = "Dettagli in agenzia.";
-
-function joinFacts(facts: string[]): string {
-  if (facts.length === 0) return "";
-  const text = facts.join(", ");
-  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+/**
+ * I dati del catalogo nella forma neutra che la matrice editoriale capisce.
+ *
+ * È il ponte fra il DTO e la matrice: qui i campi diventano frasi leggibili
+ * (`da 890 € a 1.290 €`, `5 notti`), là dentro diventano righe di consigli,
+ * tappe o risposte. Un dato assente resta `null` e la matrice non lo
+ * rimpiazza: è la stessa promessa che faceva il codice precedente, applicata a
+ * sette formati invece che a tre.
+ */
+function factsFrom(dto: CatalogProposalDto): EditorialFacts {
+  const nights = dto.commercial.durationNights;
+  return {
+    price: priceLabel(dto),
+    dates: datesLabel(dto),
+    duration: durationLabel(dto),
+    nights: isNum(nights) ? nights : null,
+    departureCities: dto.commercial.departureCities?.trim() || null,
+    included: dto.commercial.included?.trim() || null,
+    excluded: dto.commercial.excluded?.trim() || null,
+  };
 }
 
 export interface CatalogCopy {
@@ -191,93 +211,111 @@ export interface CatalogCopy {
   hashtags: string;
   /** true se la caption contiene almeno un dato commerciale reale. */
   usesCommercialData: boolean;
+  /**
+   * Consigli o tappe da stampare dentro il fotogramma.
+   *
+   * Sono le stesse righe che la caption mette a lista, non una versione
+   * parallela: il fotogramma e il testo devono dire la stessa cosa, altrimenti
+   * uno dei due mente. Vuoto per i formati che non stampano punti (hero,
+   * offerta, FAQ, ispirazione, racconto), dove il contenuto del fotogramma è
+   * già altro.
+   */
+  points: string[];
+  /**
+   * Da dove viene il contenuto dei punti.
+   *
+   * `curated` = conoscenza reale della destinazione; `derived` = costruito sui
+   * dati del catalogo e sulla struttura del viaggio. Va nei warning del DRAFT,
+   * dove serve al team e non all'utente, che sul post legge solo i punti.
+   */
+  knowledgeSource: KnowledgeSource;
 }
 
 /**
- * Copy derivata dalla proposta.
+ * Copy derivata dalla proposta, con la matrice editoriale.
  *
- * Il titolo resta distinto dalla caption e nessuna parola commerciale compare
- * se il dato non c'è: è il test a garantire questo, non l'occhio.
+ * Il titolo e la caption non sono più scritti qui: sono delegati a
+ * `editorialTitle` ed `editorialCaption`, che garantiscono che il titolo nomini
+ * sempre la destinazione e che la caption abbia la struttura del formato. Qui il
+ * DTO viene tradotto nei dati che la matrice capisce, e il resto è aritmetica
+ * sul risultato.
+ *
+ * Una sola difesa resta qui e non nella matrice: se il titolo prodotto non
+ * nomina il luogo, o è una formula generica, viene sostituito con il nome del
+ * luogo. È il punto in cui la regola diventa vera anche se un formato futuro
+ * sbaglia, ed è testato come tale.
  */
 export function catalogCopyFromProposal(
   dto: CatalogProposalDto,
   format: ContentFormat
 ): CatalogCopy {
   const place = placeOf(dto);
-  const facts = commercialFacts(dto);
-  const factSentence = joinFacts(facts);
-  const tail = factSentence ? `${factSentence} ${CTA}` : CTA;
+  const facts = factsFrom(dto);
 
-  let title: string;
-  let caption: string;
+  let title = editorialTitle(format, place, facts);
+  if (!titleNamesPlace(title, place) || isGenericTitle(title)) title = place;
 
-  switch (format) {
-    case "HERO_DESTINATION":
-      title = place;
-      caption = `${place} è la protagonista di questa proposta. ${tail}`;
-      break;
-    case "STORYTELLING":
-      title = `Un viaggio che parte da ${place}`;
-      caption =
-        `Tutto comincia da una scelta: ${place}. ` +
-        `Un posto da tenere d'occhio per la prossima partenza. ${tail}`;
-      break;
-    case "INSPIRATION":
-      title = `Il richiamo di ${place}`;
-      caption =
-        `A volte basta pensare a ${place} per rimettere in moto i desideri. ` +
-        `Ecco cosa abbiamo in serbo per questa stagione. ${tail}`;
-      break;
-    case "TRAVEL_TIPS":
-      title = `Prima di partire verso ${place}`;
-      caption =
-        `Tre domande da fare prima di scegliere ${place}: quando partire, ` +
-        `da dove, e cosa portare. ${tail}`;
-      break;
-    case "ITINERARY":
-      title = `${place}: ${datesLabel(dto) ?? "proposta"}`;
-      caption =
-        `${place}, ${datesLabel(dto) ?? "con partenza da definire"}. ` +
-        `${dto.commercial.departureCities?.trim() ? `Partenze da ${dto.commercial.departureCities.trim()}. ` : ""}` +
-        `${durationLabel(dto) ? `${durationLabel(dto)} in programma. ` : ""}${CTA}`;
-      break;
-    case "OFFER": {
-      const price = priceLabel(dto) ?? "su richiesta";
-      const dates = datesLabel(dto);
-      title = `${place}: ${price}${dates ? ` · ${dates}` : ""}`;
-      caption =
-        `${place} è disponibile ${price}` +
-        `${dates ? ` ${dates}` : ""}. ` +
-        `${durationLabel(dto) ? `${durationLabel(dto)}.` : ""} ${CTA}`;
-      break;
-    }
-    case "FAQ": {
-      const lines: string[] = [];
-      const price = priceLabel(dto);
-      if (price) lines.push(`Quanto costa? ${price}.`);
-      const dates = datesLabel(dto);
-      if (dates) lines.push(`Quando? ${dates}.`);
-      const duration = durationLabel(dto);
-      if (duration) lines.push(`Quante notti? ${duration}.`);
-      if (dto.commercial.included?.trim()) {
-        lines.push(`Cosa comprende? ${dto.commercial.included.trim()}.`);
-      }
-      title = `${place}: le domande frequenti`;
-      caption = `${lines.join(" ")} ${CTA}`;
-      break;
-    }
-    default:
-      title = place;
-      caption = `${place} è la protagonista di questa proposta. ${CTA}`;
-  }
+  // I punti del fotogramma e le righe della lista vengono dalla stessa funzione:
+  // è l'unico modo perché ciò che si vede sull'immagine e ciò che si legge sotto
+  // non possano divergere. E la provenienza dichiara se quei punti sono fatti
+  // sulla destinazione o soltanto dati del catalogo.
+  const points = editorialPoints(format, place, facts);
 
   return {
     title,
-    caption: caption.replace(/\s+/g, " ").trim(),
+    // Gli spazi bianchi si normalizzano, ma i a capo no: sono ciò che rende
+    // una lista di consigli una lista invece di una frase lunga. Collassarli
+    // trasformerebbe il post da strutturato a corridoio.
+    caption: normalizeCaption(editorialCaption(format, place, facts)),
     hashtags: hashtagsFromTopic(place),
-    usesCommercialData: facts.length > 0,
+    usesCommercialData: Object.values(facts).some((value) => value !== null),
+    points,
+    knowledgeSource: hasCuratedKnowledge(place) ? "curated" : "derived",
   };
 }
+
+/** Normalizza gli spazi bianchi riga per riga, conservando i ritorni a capo. */
+function normalizeCaption(caption: string): string {
+  return caption
+    .split("\n")
+    .map((line) => line.replace(/[^\S\n]+/g, " ").trim())
+    .filter((line) => line.length > 0)
+    .join("\n")
+    .trim();
+}
+
+/**
+ * Provenienza di un blocco di contenuto dentro la creatività.
+ *
+ * Serve a rendere osservabile, sulla direzione stessa, *chi* ha portato ogni
+ * pezzo: i dati commerciali vengono dalla locandina, la foto dal generatore, il
+ * brand dal template dell'agenzia, la copy dal flusso editoriale. Un renderer
+ * che mescolasse le quattro senza dirlo produrrebbe immagini in cui non si sa
+ * quale parte sia un dato e quale sia una decorazione.
+ */
+export type CreativeLayerOrigin = "FLYER" | "MAGNIFIC" | "BRAND" | "COPY";
+
+export type CreativeLayer = {
+  origin: CreativeLayerOrigin;
+  /** Righe già pronte per il renderer. Vuoto = quel blocco non ha dati reali. */
+  lines: string[];
+  /** Origine puntuale (URL, id, prompt): ciò che rende il blocco verificabile. */
+  detail: string | null;
+};
+
+/**
+ * I quattro strati della creatività, tenuti separati.
+ *
+ * `commercial` è l'unico che può contenere prezzo, date o servizi, e arriva
+ * dalla locandina. Gli altri tre non portano mai un dato commerciale: è la
+ * garanzia che il generatore fotografo non riceva (e non inventi) un'offerta.
+ */
+export type CreativeLayers = {
+  commercial: CreativeLayer;
+  photo: CreativeLayer;
+  brand: CreativeLayer;
+  copy: CreativeLayer;
+};
 
 export type VisualDirection = {
   format: ContentFormat;
@@ -301,6 +339,13 @@ export type VisualDirection = {
     sourceUrl: string;
     sourceType: string;
   };
+  /**
+   * Presente solo nei flussi che separano la creatività per provenienza (il
+   * verticale locandina → fotografia → social). `buildVisualDirection` non lo
+   * valorizza: aggiungerlo qui non cambia il comportamento di nessun flusso
+   * esistente, dà solo un posto dove dichiarare da dove viene ogni strato.
+   */
+  layers?: CreativeLayers;
 };
 
 /**
@@ -330,7 +375,11 @@ export function buildVisualDirection(
     HERO_DESTINATION: `la destinazione ${place} in primo piano`,
     STORYTELLING: `un momento di viaggio che evoca ${place}`,
     INSPIRATION: `l'atmosfera di ${place} senza persone in primo piano`,
-    TRAVEL_TIPS: `un dettaglio iconico di ${place}`,
+    // Per i consigli il soggetto non è il luogo: è un dettaglio che si guarda,
+    // non uno sfondo da contemplare. È la differenza visiva tra "Maldive" come
+    // vetrina e "Maldive" come consiglio, e senza di essa la rubrica stampata
+    // sopra il titolo prometterebbe informazione su un'immagine da cartolina.
+    TRAVEL_TIPS: `un dettaglio ravvicinato e osservabile di ${place}, inquadratura da guida pratica, luce che fa leggere il soggetto`,
     ITINERARY: `la sequenza di tappe di un viaggio a ${place}`,
     OFFER: `la destinazione ${place} con lo spazio per il testo dell'offerta`,
     FAQ: `un'immagine neutra di ${place} che lasci spazio alle domande`,

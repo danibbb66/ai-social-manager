@@ -96,7 +96,14 @@ export const contentInclude = {
 
 export type ContentWithRelations = Prisma.ContentGetPayload<{
   include: typeof contentInclude;
-}>;
+}> & {
+  /**
+   * Anomalie sui legami relazionali in fase di creazione (per esempio un
+   * `ideaId` che non esiste e quindi non è stato scritto). Presente solo quando
+   * qualcosa è stato sganciato: va letto subito, non è persistito.
+   */
+  relationWarnings?: string[];
+};
 
 function normalizeDate(d: Date | string | null | undefined): Date | null {
   if (!d) return null;
@@ -191,6 +198,60 @@ export async function getContentOrThrow(id: string): Promise<ContentWithRelation
   return content;
 }
 
+export interface ContentRelationCheck {
+  ideaId: string | null;
+  catalogProposalId: string | null;
+  /** Perché un legame richiesto è stato sganciato. Vuoto nel caso normale. */
+  warnings: string[];
+}
+
+/**
+ * Verifica che gli id relazionali esistano prima di scriverli.
+ *
+ * `ideaId` e `catalogProposalId` arrivano spesso dal modello, che può inventarli.
+ * Scriverli senza controllarli fa esplodere `prisma.content.create` con un
+ * P2003 ("Foreign key constraint violated") che descrive un sintomo invece della
+ * causa, e che lascia l'utente senza spiegazione. Un legame che non può esistere
+ * semplicemente non viene scritto: il contenuto nasce comunque, sganciato, e il
+ * fatto viene dichiarato in `warnings` invece di essere nascosto.
+ *
+ * La verifica costa due `findUnique` su chiave primaria, e solo quando un id è
+ * stato passato: il percorso normale resta una sola query.
+ */
+export async function resolveContentRelations(input: {
+  ideaId?: string | null;
+  catalogProposalId?: string | null;
+}): Promise<ContentRelationCheck> {
+  const warnings: string[] = [];
+
+  const ideaId = input.ideaId?.trim() || null;
+  let resolvedIdeaId: string | null = null;
+  if (ideaId) {
+    const idea = await prisma.contentIdea.findUnique({
+      where: { id: ideaId },
+      select: { id: true },
+    });
+    if (idea) resolvedIdeaId = idea.id;
+    else warnings.push(`l'idea "${ideaId}" non esiste: il contenuto è stato creato senza collegamento.`);
+  }
+
+  const catalogProposalId = input.catalogProposalId?.trim() || null;
+  let resolvedProposalId: string | null = null;
+  if (catalogProposalId) {
+    const proposal = await prisma.catalogProposal.findUnique({
+      where: { id: catalogProposalId },
+      select: { id: true },
+    });
+    if (proposal) resolvedProposalId = proposal.id;
+    else
+      warnings.push(
+        `la proposta di catalogo "${catalogProposalId}" non esiste: il contenuto è stato creato senza ancoraggio al catalogo.`
+      );
+  }
+
+  return { ideaId: resolvedIdeaId, catalogProposalId: resolvedProposalId, warnings };
+}
+
 export async function createContent(
   input: ContentInput
 ): Promise<ContentWithRelations> {
@@ -206,6 +267,13 @@ export async function createContent(
 
   const scheduledDate = assertFutureScheduledDate(normalizeDate(input.scheduledDate), false);
 
+  // Gli id relazionali si scrivono solo se la riga collegata esiste: un id
+  // inventato non deve trasformare la creazione in un errore di vincolo.
+  const relations = await resolveContentRelations({
+    ideaId: input.ideaId,
+    catalogProposalId: input.catalogProposalId,
+  });
+
   const content = await prisma.content.create({
     data: {
       type,
@@ -214,8 +282,8 @@ export async function createContent(
       hashtags: input.hashtags ?? null,
       status: input.status ?? "DRAFT",
       scheduledDate,
-      ideaId: input.ideaId ?? null,
-      catalogProposalId: input.catalogProposalId ?? null,
+      ideaId: relations.ideaId,
+      catalogProposalId: relations.catalogProposalId,
       platforms: {
         create: platforms.map((p) => ({
           platform: p,
@@ -243,9 +311,13 @@ export async function createContent(
     title: content.title,
     status: content.status,
     platforms,
+    // Un legame sganciato è un'anomalia da poter rivedere, non una nota da perdere.
+    droppedRelations: relations.warnings,
   });
 
-  return content;
+  // Le anomalie di relazione viaggiano con il contenuto: il chiamante deve poter
+  // dichiarare che il DRAFT è nato sganciato, senza rileggere il database.
+  return relations.warnings.length > 0 ? { ...content, relationWarnings: relations.warnings } : content;
 }
 
 export async function updateContent(
@@ -319,7 +391,9 @@ export async function updateContent(
         ...(scheduledDate !== undefined
           ? { scheduledDate: scheduledDate ?? null }
           : {}),
-        ...(input.ideaId !== undefined ? { ideaId: input.ideaId ?? null } : {}),
+        ...(input.ideaId !== undefined
+          ? { ideaId: (await resolveContentRelations({ ideaId: input.ideaId })).ideaId }
+          : {}),
         ...(platforms
           ? {
               platforms: {

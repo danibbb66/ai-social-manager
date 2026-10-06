@@ -10,7 +10,18 @@
  * dedotti né stimati: restano nulli. Nessuna associazione titolo→immagine
  * viene "corretta": ciò che il sito pubblica viene registrato come sta e le
  * incoerenze vengono segnalate come anomalie per la revisione umana.
+ *
+ * ## Il nome del distributore non viene importato
+ *
+ * Le locandine sono materiale promozionale di terzi e il titolo ne porta spesso
+ * il marchio. Quel nome viene tolto prima di diventare nome della proposta o
+ * destinazione, perché da lì arriverebbe sul fotogramma di un post
+ * dell'agenzia. La rimozione è conservativa: un titolo pulito resta identico,
+ * e un titolo fatto solo di un marchio diventa un segnaposto dichiarato con la
+ * destinazione `null`, da segnalare e non da inventare.
  */
+
+import { stripDistributorBranding } from "@/lib/catalog/distributor";
 
 /** Pagina sorgente del catalogo pubblico. */
 export const OFFERTE_PAGE_URL = "https://www.mrhromaboccea.it/offerte/";
@@ -39,6 +50,15 @@ export interface OfferteCard {
   order: number;
   /** Destinazione derivata dal titolo, quando è ricavabile senza indovinare. */
   destination: string | null;
+  /**
+   * `true` quando il titolo pubblicato conteneva il nome di un distributore o
+   * di un operatore ed è stato ripulito prima di diventare nome della proposta.
+   *
+   * Non è un errore: è una dichiarazione. Il marchio di terzi non entra nel
+   * catalogo né nei post, e chi rivede le proposte sa che quel titolo ne
+   * conteneva uno invece di credere che l'agenzia lo abbia scritto così.
+   */
+  brandingRemoved?: boolean;
 }
 
 export type CatalogAnomalyCode =
@@ -47,6 +67,7 @@ export type CatalogAnomalyCode =
   | "PLACEHOLDER_TITLE"
   | "TITLE_IMAGE_MISMATCH"
   | "DESTINATION_MISSING"
+  | "DISTRIBUTOR_BRAND"
   | "NOT_ON_SITE";
 
 export interface CatalogAnomaly {
@@ -61,6 +82,7 @@ const ANOMALY_LABELS: Record<CatalogAnomalyCode, string> = {
   PLACEHOLDER_TITLE: "Titolo segnaposto",
   TITLE_IMAGE_MISMATCH: "Titolo e immagine discordi",
   DESTINATION_MISSING: "Destinazione mancante",
+  DISTRIBUTOR_BRAND: "Marchio del distributore rimosso",
   NOT_ON_SITE: "Non più sul sito",
 };
 
@@ -199,6 +221,22 @@ export function isPlaceholderTitle(name: string): boolean {
 }
 
 /**
+ * Il titolo ripulito dal nome del distributore che vi era attaccato.
+ *
+ * La pagina dell'agenzia ri-pubblica locandine di terzi e il titolo ne porta
+ * spesso il marchio: "Veratour - Rodi", "Rodi con Bravifondo". Quel nome non è
+ * un luogo, e una destinazione derivata da lì finirebbe stampata sul
+ * fotogramma di un post dell'agenzia, con dentro il nome di chi non siamo.
+ *
+ * La rimozione è dichiarata e conservativa: se il titolo è pulito resta
+ * identico, e se non rimane più nulla la destinazione resta `null` e la
+ * card viene segnalata come anomala, non riparata con un nome inventato.
+ */
+function stripBranding(name: string): string {
+  return stripDistributorBranding(name) ?? "";
+}
+
+/**
  * Destinazione ricavata dal titolo, con la regola più conservativa possibile.
  *
  *  - "Rodi da Milano e Roma" → "Rodi"   (la parte dopo "da" è la città di partenza)
@@ -209,9 +247,10 @@ export function isPlaceholderTitle(name: string): boolean {
  * null e viene segnalato come anomalia.
  */
 export function deriveDestination(name: string): string | null {
-  const title = name.trim();
+  const branded = stripBranding(name);
+  const title = branded.trim();
   if (!title) return null;
-  if (isPlaceholderTitle(title)) return null;
+  if (isPlaceholderTitle(branded)) return null;
 
   const departure = title.match(/^(.+?)\s+da\s+\S+/i);
   if (departure) {
@@ -303,17 +342,30 @@ export function parseLocandineCards(
 
     const title = rawTitle ? decodeEntities(rawTitle).trim() : "";
     const filename = filenameFromUrl(imageUrl);
+    // Il nome della proposta non porta il marchio del distributore: quel nome
+    // finirebbe nell'elenco, nel titolo del post e sul fotogramma, e su un post
+    // dell'agenzia non ci deve essere. Il titolo ripulito è anche ciò che
+    // `deriveDestination` usa, quindi il nome non viene più derivato da un
+    // testo che contiene già un nome di terzi.
+    //
+    // Se dalla rimozione non resta nulla — un titolo fatto solo di un marchio —
+    // il nome diventa un segnaposto dichiarato e la destinazione resta `null`:
+    // la card viene segnalata per la revisione umana, non riparata con un nome
+    // inventato.
+    const published = title || filename.replace(/\.[a-z0-9]+$/i, "");
+    const name = stripBranding(published);
     // La destinazione si deriva SOLO da un titolo realmente pubblicato: il
     // nome file è un'etichetta tecnica e sbaglia (vedi Mauritius/New York).
     const hasTitle = title.length > 0;
 
     cards.push({
-      name: title || filename.replace(/\.[a-z0-9]+$/i, ""),
+      name: name || `Proposta ${order + 1}`,
       rawTitle: rawTitle === null ? null : title,
       imageUrl,
       filename,
       order,
-      destination: hasTitle ? deriveDestination(title) : null,
+      destination: hasTitle ? deriveDestination(published) : null,
+      brandingRemoved: name !== published && name.length > 0,
     });
     order += 1;
   }
@@ -348,11 +400,32 @@ export function detectCardAnomalies(cards: OfferteCard[]): Map<number, CatalogAn
       );
     }
 
-    if (isPlaceholderTitle(card.name)) {
+    if (card.brandingRemoved) {
+      // La rimozione è silenziosa solo per l'utente, non per chi rivede il
+      // catalogo: il titolo pubblicato conteneva il marchio di un
+      // distributore, e quel nome non entra né nel catalogo né nei post.
+      found.push(
+        anomaly(
+          "DISTRIBUTOR_BRAND",
+          `Dal titolo pubblicato "${card.rawTitle ?? card.name}" è stato tolto ` +
+            `il marchio di un distributore: la proposta si chiama "${card.name}".`
+        )
+      );
+    }
+
+    // La parola che dichiara il segnaposto ("locandina") è anche una delle
+    // parole che il titolo perde quando viene ripulito dal marchio: va
+    // verificata sul titolo pubblicato, PRIMA della rimozione. "Nuova
+    // Locandina 1" ripulito diventa "Nuova 1", che non dice più nulla, e una
+    // card non identificata deve restare segnalata come tale.
+    const placeholderPublished =
+      card.rawTitle && isPlaceholderTitle(card.rawTitle) ? card.rawTitle : null;
+
+    if (isPlaceholderTitle(card.name) || placeholderPublished !== null) {
       found.push(
         anomaly(
           "PLACEHOLDER_TITLE",
-          `Titolo segnaposto "${card.name}": locandina non ancora identificata dall'agenzia.`
+          `Titolo segnaposto "${placeholderPublished ?? card.name}": locandina non ancora identificata dall'agenzia.`
         )
       );
     }

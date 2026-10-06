@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Bot, Loader2, Plus, Send, RefreshCw } from "lucide-react";
+import { Bot, Loader2, Plus, Send } from "lucide-react";
 import { Button, Card, Textarea, EmptyState } from "@/components/ui";
 import { cn, timeAgo } from "@/lib/utils";
 import {
@@ -55,7 +55,6 @@ export function ChatPanel() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [round, setRound] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [creating, startCreating] = useTransition();
 
@@ -92,10 +91,19 @@ export function ChatPanel() {
             };
             if (role === "TOOL") {
               const parsed = parseToolResult(raw);
+              // I tool riusciti non hanno una riga: la conferma finale li
+              // riassume già, e mostrare una card per ogni salvataggio
+              // trasformerebbe una chat in un registro di esecuzione. Solo i
+              // fallimenti si vedono, perché un errore che non compare lascia
+              // l'utente davanti a una richiesta che sembra non essere mai
+              // arrivata.
+              const failed = parsed?.ok === false;
               return {
                 ...base,
-                content: parsed?.label ?? (m.toolName as string | null) ?? raw,
-                toolResult: parsed ?? { message: raw },
+                content: failed ? parsed?.label ?? "" : "",
+                toolResult: parsed ?? null,
+                toolOk: failed ? false : undefined,
+                hide: !failed,
               };
             }
             if (role === "ASSISTANT") {
@@ -117,7 +125,6 @@ export function ChatPanel() {
     (id: string) => {
       setConversationId(id);
       setMessages([]);
-      setRound(0);
       loadMessages(id);
       router.replace(`/chat?id=${id}`, { scroll: false });
     },
@@ -147,6 +154,7 @@ export function ChatPanel() {
     if (!conversationId) return;
     const id = conversationId;
     const onFocus = () => {
+      if (sendingRef.current) return;
       loadMessages(id).then(loadConversations);
     };
     router.prefetch(`/chat?id=${id}`);
@@ -170,13 +178,15 @@ export function ChatPanel() {
 
   const send = async (text: string) => {
     const message = text.trim();
-    if (!message || !conversationId || sendingRef.current) return;
+    if (!message || sendingRef.current) return;
 
     sendingRef.current = true;
+    if (!conversationId) decidedId.current = true;
     setInput("");
     setError(null);
     setSending(true);
-    setRound(0);
+
+    let targetConversationId = conversationId;
 
     setMessages((prev) => [
       ...prev,
@@ -195,7 +205,10 @@ export function ChatPanel() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, message }),
+        body: JSON.stringify({
+          conversationId: targetConversationId ?? undefined,
+          message,
+        }),
       });
 
       if (!res.ok || !res.body) {
@@ -231,10 +244,16 @@ export function ChatPanel() {
             appendErrorMessage(String(event.text ?? "Errore sconosciuto."));
           } else if (event.type === "done") {
             doneReceived = true;
-            const id = String(event.conversationId ?? conversationId);
-            setConversationId(id);
-            await loadMessages(id);
-            await loadConversations();
+            const id = String(event.conversationId ?? targetConversationId ?? "");
+            if (id) {
+              targetConversationId = id;
+              if (id !== conversationId) {
+                setConversationId(id);
+                router.replace(`/chat?id=${id}`, { scroll: false });
+              }
+              await loadMessages(id);
+              await loadConversations();
+            }
           }
         }
       }
@@ -243,7 +262,6 @@ export function ChatPanel() {
     } finally {
       sendingRef.current = false;
       setSending(false);
-      setRound(0);
       if (doneReceived) {
         try {
           router.refresh();
@@ -256,27 +274,37 @@ export function ChatPanel() {
 
   const handleAgentEvent = (event: Record<string, unknown>) => {
     switch (event.type) {
-      case "round":
-        setRound(Number(event.n ?? 0));
-        break;
+      // Il conteggio dei round non viene nemmeno conservato: è un dettaglio di
+      // esecuzione, e fin qui non ha mai prodotto nulla a schermo che l'utente
+      // potesse usare.
       case "tool": {
+        // Il silenzio è la regola: mentre il turno lavora non compare nulla.
+        //
+        // Aggiungere una riga per ogni tool significava che l'utente leggeva
+        // "Creazione contenuto", "Lettura contenuto", "Creazione contenuto" via,
+        // per poi trovare sotto la conferma vera. Il lavoro interno è lavoro
+        // interno: l'unica cosa che deve arrivare a schermo è il risultato.
+        //
+        // Gli errori sono l'eccezione, perché un tool che fallisce e non lo dice
+        // lascia l'utente davanti a una chat muta che sembra funzionante. Se il
+        // turno fallisce, arriva un messaggio `final` che lo spiega.
         const ok = (event as { ok?: unknown }).ok !== false;
-        const toolError =
-          typeof event.error === "string" && event.error.trim()
-            ? event.error
-            : null;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `local-tool-${Date.now()}-${Math.random()}`,
-            role: "TOOL",
-            content: String(event.label ?? event.name ?? "Strumento"),
-            toolName: String(event.name ?? "tool"),
-            toolOk: ok,
-            toolError,
-            createdAt: undefined,
-          },
-        ]);
+        if (!ok) {
+          const toolError =
+            typeof event.error === "string" && event.error.trim() ? event.error : null;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `local-tool-${Date.now()}-${Math.random()}`,
+              role: "TOOL",
+              content: "",
+              toolName: String(event.name ?? "tool"),
+              toolOk: false,
+              toolError,
+              createdAt: undefined,
+            },
+          ]);
+        }
         break;
       }
       case "final":
@@ -306,15 +334,27 @@ export function ChatPanel() {
 
   const appendErrorMessage = (text: string) => {
     setError(text);
-    setMessages((prev) => {
-      const next = [...prev];
-      const i = next.findIndex((m) => m.streaming);
-      if (i >= 0) {
-        next[i] = { ...next[i], streaming: false };
-      }
-      return next;
-    });
+    setMessages((prev) =>
+      prev
+        .filter((m) => !(m.streaming && !m.content.trim()))
+        .map((m) => (m.streaming ? { ...m, streaming: false } : m))
+    );
   };
+
+  const suggestions = (
+    <div className="flex max-w-lg flex-wrap justify-center gap-2">
+      {SUGGESTIONS.map((s) => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => send(s)}
+          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-sky-300 hover:text-sky-700"
+        >
+          {s}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="mx-auto flex max-w-5xl gap-6">
@@ -378,22 +418,24 @@ export function ChatPanel() {
                 Assistente AI
               </div>
               <div className="text-xs text-slate-400">
-                Qwen via Ollama · gestione contenuti
+                gestione contenuti
               </div>
             </div>
-            {round > 0 && sending ? (
-              <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700">
-                <RefreshCw className="h-3 w-3 animate-spin" />
-                Esecuzione round {round}
-              </span>
-            ) : null}
+            {/* Nessuna indicazione di avanzamento nell'intestazione: il pulsante di invio
+                resta disabled e il punto pulsante sotto il campo dice che
+                l'assistente sta scrivendo. Un contatore di round sarebbe un log
+                di esecuzione, e "Sto lavorando" ripetuto accanto al campo è la
+                stessa informazione detta due volte. */}
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
             {loading ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Caricamento…
+              <div className="flex h-full flex-col items-center justify-center gap-5">
+                <div className="flex items-center text-sm text-slate-400">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Caricamento…
+                </div>
+                {suggestions}
               </div>
             ) : messages.length === 0 && !sending ? (
               <div className="flex h-full flex-col items-center justify-center gap-5">
@@ -401,22 +443,18 @@ export function ChatPanel() {
                   title="Come posso aiutarti?"
                   description="Scrivi in linguaggio naturale e l'assistente userà gli strumenti per creare contenuti, generare testi, programmare e altro."
                 />
-                <div className="flex max-w-lg flex-wrap justify-center gap-2">
-                  {SUGGESTIONS.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => send(s)}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-sky-300 hover:text-sky-700"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
+                {suggestions}
               </div>
             ) : (
               <>
                 {messages.map((m) => {
+                  // Le card dei tool sono solo per i fallimenti: mentre il turno lavora la chat
+                  // resta muta, e quando finisce c'è la frase di conferma. Un
+                  // tool riuscito non ha niente da dire che la conferma non dica
+                  // già, e la sua card aggiungerebbe un messaggio per ogni
+                  // passaggio.
                   if (m.role === "TOOL") {
+                    if (m.toolOk !== false) return null;
                     return (
                       <div key={m.id} className="flex justify-start">
                         <ToolResultCard
@@ -495,11 +533,11 @@ export function ChatPanel() {
                 placeholder="Scrivi un messaggio… (Invio per inviare)"
                 rows={1}
                 className="max-h-40 min-h-11 resize-none"
-                disabled={!conversationId || sending}
+                aria-label="Messaggio per l'assistente AI"
               />
               <Button
                 type="submit"
-                disabled={!input.trim() || !conversationId || sending || loadingMessages}
+                disabled={!input.trim() || sending || loadingMessages}
               >
                 {sending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

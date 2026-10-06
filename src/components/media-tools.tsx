@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Link2, Link2Off, Trash2, UploadCloud } from "lucide-react";
 import { linkAssetAction, unlinkAssetAction } from "@/lib/actions/media";
+import { cn } from "@/lib/utils";
 import {
   Button,
   Modal,
@@ -236,21 +237,6 @@ export function AssetCard({
         </div>
       </div>
 
-      {error ? (
-        <Modal
-          open
-          onClose={() => setError(null)}
-          title="Operazione non riuscita"
-          footer={
-            <Button variant="secondary" onClick={() => setError(null)}>
-              Chiudi
-            </Button>
-          }
-        >
-          <p className="text-sm text-red-700">{error}</p>
-        </Modal>
-      ) : null}
-
       <Modal
         open={linkOpen}
         onClose={() => setLinkOpen(false)}
@@ -355,6 +341,24 @@ export function AssetCard({
           </div>
         </div>
       </Modal>
+
+      {/* Ultimo nodo del fragment: a parità di z-index è l'elemento più in
+          alto, così il messaggio d'errore resta visibile anche quando fallisce
+          un'operazione avviata da un'altra modale (es. "Associa"). */}
+      {error ? (
+        <Modal
+          open
+          onClose={() => setError(null)}
+          title="Operazione non riuscita"
+          footer={
+            <Button variant="secondary" onClick={() => setError(null)}>
+              Chiudi
+            </Button>
+          }
+        >
+          <p className="text-sm text-red-700">{error}</p>
+        </Modal>
+      ) : null}
     </>
   );
 }
@@ -384,7 +388,14 @@ export function UploadButton() {
   };
 
   return (
-    <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-sky-400 hover:text-sky-700">
+    <label
+      className={cn(
+        "inline-flex items-center gap-2 rounded-lg border border-dashed px-4 py-2 text-sm font-medium transition-colors",
+        uploading
+          ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+          : "cursor-pointer border-slate-300 bg-white text-slate-600 hover:border-sky-400 hover:text-sky-700"
+      )}
+    >
       {uploading ? (
         <Loader2 className="h-4 w-4 animate-spin" />
       ) : (
@@ -396,7 +407,14 @@ export function UploadButton() {
         multiple
         accept="image/*,video/*"
         className="sr-only"
-        onChange={(e) => doUpload(e.target.files)}
+        disabled={uploading}
+        onChange={(e) => {
+          const files = e.target.files;
+          // Azzeriamo il valore: senza questo, riselezionare lo stesso file
+          // non emette alcun evento change e il secondo upload non parte mai.
+          e.target.value = "";
+          void doUpload(files);
+        }}
       />
     </label>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Check, Loader2, X } from "lucide-react";
 import { approveAction, rejectAction } from "@/lib/actions/content";
 import { Button, Modal, Textarea } from "@/components/ui";
@@ -83,16 +83,28 @@ export function useApprovalActions() {
 export function RejectReasonDialog({
   open,
   busy,
+  error,
   onClose,
   onConfirm,
 }: {
   open: boolean;
   busy?: boolean;
+  /** Errore dell'ultima conferma: mostrato dentro il dialog, che resta aperto. */
+  error?: string | null;
   onClose: () => void;
   onConfirm: (note?: string) => void;
 }) {
   const [reason, setReason] = useState<string | null>(null);
   const [note, setNote] = useState("");
+
+  // A ogni apertura si ripartisce puliti: altrimenti, confermando il rifiuto
+  // senza passare da `close()`, motivo e nota della scelta precedente
+  // restavano precompilati alla riapertura successiva.
+  useEffect(() => {
+    if (!open) return;
+    setReason(null);
+    setNote("");
+  }, [open]);
 
   const close = () => {
     if (busy) return;
@@ -155,6 +167,14 @@ export function RejectReasonDialog({
           placeholder="Aggiungi un dettaglio (facoltativo)…"
           aria-label="Nota del rifiuto"
         />
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+          >
+            {error}
+          </p>
+        ) : null}
         <p className="text-xs text-slate-400">
           La motivazione viene salvata nello storico delle decisioni del
           contenuto.
@@ -244,6 +264,7 @@ export function ApprovalActions({
       <RejectReasonDialog
         open={askReject}
         busy={pending}
+        error={error}
         onClose={() => setAskReject(false)}
         onConfirm={doReject}
       />

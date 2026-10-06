@@ -414,6 +414,18 @@ export function PlatformBadges({
   );
 }
 
+/**
+ * Conteggio globale delle modali aperte.
+ *
+ * Il blocco dello scroll del body va gestito in modo condiviso: con due
+ * modali simultanee (es. errore + operazione) ciascuna catturava il valore
+ * corrente di `overflow` e lo ripristinava alla chiusura, lasciando la
+ * pagina con lo scroll bloccato per sempre se l'ultima a chiudersi aveva
+ * letto "hidden".
+ */
+let openModalCount = 0;
+let savedBodyOverflow = "";
+
 /** Modale accessibile e riusabile, senza dipendenze esterne. */
 export function Modal({
   open,
@@ -446,17 +458,44 @@ export function Modal({
     busyRef.current = busy;
   }, [busy]);
 
+  // Focus: aprendo, il focus entra nel dialogo (altrimenti resta sul pulsante
+  // che lo ha aperto e i campi interni non sono raggiungibili da tastiera);
+  // chiudendo, torna all'elemento che lo aveva aperto invece di finire sul body.
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  const openerRef = React.useRef<HTMLElement | null>(null);
+  // Il backdrop si chiude solo se il gesto è INIZIATO sul backdrop: un drag
+  // di testo che esce dal pannello genera un click sul contesto comune e, senza
+  // questo controllo, chiudeva la modale perdendo quanto digitato.
+  const backdropArmedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    openerRef.current = active instanceof HTMLElement ? active : null;
+    panelRef.current?.focus({ preventScroll: true });
+    return () => {
+      const opener = openerRef.current;
+      if (opener && document.contains(opener)) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, [open]);
+
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !busyRef.current) onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    if (openModalCount === 0) {
+      savedBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
+    openModalCount += 1;
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
+      openModalCount -= 1;
+      if (openModalCount === 0) document.body.style.overflow = savedBodyOverflow;
     };
   }, [open]);
 
@@ -467,13 +506,21 @@ export function Modal({
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:p-8"
       role="dialog"
       aria-modal="true"
-      onClick={() => {
-        if (!busy) onClose();
+      onMouseDown={(e) => {
+        backdropArmedRef.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        const armed = backdropArmedRef.current;
+        backdropArmedRef.current = false;
+        if (busy || !armed || e.target !== e.currentTarget) return;
+        onClose();
       }}
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         className={cn(
-          "my-auto w-full rounded-xl border border-slate-200 bg-white shadow-xl",
+          "my-auto w-full rounded-xl border border-slate-200 bg-white shadow-xl focus:outline-none",
           size === "lg" ? "max-w-4xl" : "max-w-xl"
         )}
         onClick={(e) => e.stopPropagation()}
