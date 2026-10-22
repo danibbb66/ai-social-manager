@@ -1,16 +1,7 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { publishContent } from "@/lib/services/publish";
-import { redactSecrets } from "@/lib/security";
+import { dispatchDueContents } from "@/lib/services/dispatch";
 
 export const dynamic = "force-dynamic";
-
-type DispatchResult = {
-  contentId: string;
-  ok: boolean;
-  message: string;
-  jobId?: string;
-};
 
 /**
  * Stessa auth duale di `/api/editorial/run` e `/api/editorial/status`:
@@ -34,54 +25,13 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 /**
- * Pubblica i contenuti in SCHEDULED la cui data è già passata.
- *
- * Ogni contenuto viene processato in modo indipendente: un errore su uno non
- * interrompe la coda degli altri. Le eccezioni (mancata approvazione, nessuna
- * piattaforma, conferma mancante) lasciano il contenuto in SCHEDULED, quindi
- * la prossima esecuzione del cron lo riproverà; un fallimento registrato dal
- * provider sposta invece lo stato su FAILED e non viene ritentato.
- */
-async function dispatchDueContents(now: Date) {
-  const due = await prisma.content.findMany({
-    where: { status: "SCHEDULED", scheduledDate: { lte: now } },
-    orderBy: { scheduledDate: "asc" },
-    select: { id: true, scheduledDate: true },
-  });
-
-  const results: DispatchResult[] = [];
-
-  for (const content of due) {
-    try {
-      const res = await publishContent(content.id, undefined, { confirm: true });
-      results.push({
-        contentId: content.id,
-        ok: res.ok,
-        message: res.message,
-        jobId: res.jobId,
-      });
-    } catch (e) {
-      results.push({
-        contentId: content.id,
-        ok: false,
-        message: redactSecrets(e instanceof Error ? e.message : String(e)),
-      });
-    }
-  }
-
-  return {
-    due: due.length,
-    published: results.filter((r) => r.ok).length,
-    failed: results.filter((r) => !r.ok).length,
-    results,
-  };
-}
-
-/**
  * Dispatcher della coda editoriale: GET e POST eseguono la stessa operazione.
  *
- * GET è il metodo che Vercel Cron invoca; POST resta disponibile per il
- * trigger manuale con `x-api-key`.
+ * GET è il metodo che Vercel Cron invoca (14:00 UTC ≈ 15:00 Italia d'inverno).
+ * POST resta disponibile per il trigger manuale con `x-api-key`.
+ *
+ * Un solo contenuto del giorno viene pubblicato. I programmati dei giorni
+ * precedenti tornano in bozza, non escono in automatico.
  */
 async function handle(req: NextRequest) {
   if (!isAuthorized(req)) {

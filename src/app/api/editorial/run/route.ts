@@ -6,14 +6,16 @@ export const dynamic = "force-dynamic";
 /**
  * Trigger esterno del motore editoriale: POST con autenticazione.
  *
+ * La generazione automatica quotidiana non è più in `vercel.json`: i
+ * contenuti si creano a mano. Questo endpoint resta per un avvio manuale.
+ *
  * Due metodi supportati:
- *  - Vercel Cron: header `Authorization: Bearer <CRON_SECRET>` (inviato
- *    automaticamente da Vercel quando CRON_SECRET è configurato nel progetto).
+ *  - Bearer `CRON_SECRET` (stesso schema degli altri endpoint editoriali).
  *  - Chiamate manuali: header `x-api-key` con EDITORIAL_API_KEY.
  *
- * Fail closed: se CRON_SECRET non è configurato, il metodo Vercel Cron non
- * risulta autorizzato. Senza EDITORIAL_API_KEY configurato ogni richiesta con
- * x-api-key è rifiutata, anche con una chiave vuota.
+ * Fail closed: se CRON_SECRET non è configurato, il Bearer non è autorizzato.
+ * Senza EDITORIAL_API_KEY configurato ogni richiesta con x-api-key è rifiutata,
+ * anche con una chiave vuota.
  */
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization")?.trim() ?? "";

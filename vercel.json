@@ -1,12 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/editorial/run",
-      "schedule": "0 9 * * *"
-    },
-    {
       "path": "/api/editorial/dispatch",
-      "schedule": "0 8 * * *"
+      "schedule": "0 14 * * *"
     }
   ]
 }
