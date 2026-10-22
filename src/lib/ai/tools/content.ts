@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   createContent as svcCreate,
+  createContentFromProposal as svcCreateFromProposal,
   updateContent as svcUpdate,
   getContent as svcGet,
   listContents as svcList,
@@ -11,17 +12,22 @@ import { AiTool, contentBriefView } from "@/lib/ai/tools/types";
 import { platformsField, hashtagsField } from "@/lib/ai/tools/schemas";
 import { fallbackCopyFromTopic } from "@/lib/ai/content-copy";
 import { attachStockVisual } from "@/lib/ai/content-stock";
+import { resolvePublicationFlow } from "@/lib/ai/publication-flow";
 import { resolveCatalogProposalForAi } from "@/lib/services/catalog-ai";
 import { materializeCatalogVisual } from "@/lib/services/catalog-visual";
+import { ensureVideoPoster, generateVideoForContent } from "@/lib/services/video";
 import {
   CONTENT_FORMATS,
   availableFormats,
   buildVisualDirection,
   catalogCopyFromProposal,
   pickEditorialFormat,
+  pickTeaserFormat,
   placeOf,
   type ContentFormat,
 } from "@/lib/ai/catalog-content";
+import { logAIError } from "@/lib/logger";
+import { friendlyMessage } from "@/lib/errors/user-message";
 
 const TYPES = z.enum(["POST", "CAROUSEL", "VIDEO"]);
 
@@ -31,6 +37,12 @@ const createSchema = z.object({
     .optional()
     .describe(
       "Tipo contenuto. IMPORTANTE: per i CAROUSEL usa lo strumento dedicato createCarousel, NON createContent."
+    ),
+  flow: z
+    .enum(["TEASER", "OFFER"])
+    .optional()
+    .describe(
+      "Flusso di pubblicazione. TEASER: incuriosimento, solo visual del luogo, MAI prezzi, date o offerte (default senza catalogo, e unico flusso possibile per i VIDEO). OFFER: post commerciale che parte dalla locandina della proposta del Catalogo, la rigenera graficamente e stampa l'offerta; richiede fromCatalog/catalogProposalId con prezzo e date nel catalogo."
     ),
   topic: z
     .string()
@@ -64,6 +76,12 @@ const createSchema = z.object({
     ),
   title: z.string().optional().describe("Titolo breve del contenuto"),
   caption: z.string().optional().describe("Testo/caption da pubblicare"),
+  callout: z
+    .string()
+    .optional()
+    .describe(
+      "Testo 'gancio' che l'utente vuole stampato AL CENTRO del post sopra la foto, con un banner dietro (es. 'hotel 4★, mezza pensione, dal 22/11/2026 al 27/11/2026, da € 2899'). Riporta esattamente il testo richiesto dall'utente, senza inventarlo né riscriverlo. IMPORTANTE: è testo FORNITO DALL'UTENTE, può citare prezzi/date/servizi e NON attiva il flusso catalogo/OFFER: usa type POST senza fromCatalog e senza catalogProposalId. Se l'utente non chiede questo testo, non passarlo."
+    ),
   hashtags: hashtagsField.optional(),
   platforms: platformsField.optional(),
   withMedia: z
@@ -72,6 +90,53 @@ const createSchema = z.object({
     .describe(
       "Legacy/compatibilità: non usato. Non controlla il visuale del flusso catalogo, che lo materializza da solo, e non produce immagini nel ramo senza catalogo. Non passarlo."
     ),
+  ideaId: z.string().optional().describe("Id di un'idea collegata, se serve"),
+});
+
+/**
+ * Schema che vede la CHAT: solo post e video creati da noi, nessun catalogo.
+ *
+ * Il catalogo/locandine è un flusso separato (rigenerazione delle locandine del
+ * sito), gestito altrove e NON da questa chat. Qui il modello può indicare
+ * SOLO: tipo, argomento/destinazione, formato, testi, piattaforme e il testo
+ * "gancio" fornito dall'utente. Non ci sono campi che attivano il catalogo,
+ * quindi il modello non può né cercarlo né rifiutare per la sua assenza.
+ */
+const createPostSchema = z.object({
+  type: z
+    .enum(["POST", "VIDEO"])
+    .optional()
+    .describe(
+      "Tipo contenuto. IMPORTANTE: per i CAROUSEL usa lo strumento dedicato createCarousel, NON createContent."
+    ),
+  topic: z
+    .string()
+    .optional()
+    .describe(
+      "Argomento/destinazione esatta richiesta dall'utente (es. 'Tokyo', 'Maldive'). È un VINCOLO: titolo, caption, hashtag e immagine devono parlare solo di questo. Ripasalo sempre."
+    ),
+  destination: z
+    .string()
+    .optional()
+    .describe(
+      "Destinazione del post (es. 'Tokyo'). Serve solo a indicare il luogo esatto. Crea sempre il contenuto dalla destinazione richiesta, senza alcuna verifica esterna."
+    ),
+  format: z
+    .enum(CONTENT_FORMATS)
+    .optional()
+    .describe(
+      "Formato editoriale del post (HERO_DESTINATION, TRAVEL_TIPS, ITINERARY, FAQ...). Viene scelto dal codice se lo ometti."
+    ),
+  title: z.string().optional().describe("Titolo breve del contenuto"),
+  caption: z.string().optional().describe("Testo/caption da pubblicare"),
+  callout: z
+    .string()
+    .optional()
+    .describe(
+      "Testo 'gancio' che l'utente vuole stampato AL CENTRO del post sopra la foto, con un banner dietro (es. 'hotel 4★, mezza pensione, dal 22/11/2026 al 27/11/2026, da € 2899'). Riporta ESATTAMENTE il testo richiesto dall'utente, senza inventarlo né riscriverlo, anche se contiene prezzi o date (li ha forniti lui)."
+    ),
+  hashtags: hashtagsField.optional(),
+  platforms: platformsField.optional(),
   ideaId: z.string().optional().describe("Id di un'idea collegata, se serve"),
 });
 
@@ -128,10 +193,25 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
   }
 
   const proposal = resolution.proposal;
-  const { format, warnings } = pickEditorialFormat(
-    proposal,
-    parsed.format as ContentFormat | undefined
-  );
+  const offerAvailable = availableFormats(proposal).includes("OFFER");
+
+  // Il flusso si decide qui, prima di qualsiasi copia: da questo punto TEASER e
+  // OFFER seguono strade diverse e non si rincorrono. Un ancoraggio esplicito
+  // al catalogo resta la richiesta di un post offerta (è il comportamento
+  // storico del ramo catalogo), ma un VIDEO o una proposta senza dati
+  // commerciali sufficienti deviano su TEASER, e la deviazione è dichiarata.
+  const resolvedFlow = resolvePublicationFlow({
+    requested: parsed.flow,
+    contentType: parsed.type ?? "POST",
+    hasUsableOffer: offerAvailable,
+    defaultFlow: "OFFER",
+  });
+  const flow = resolvedFlow.flow;
+
+  const { format, warnings } =
+    flow === "OFFER"
+      ? pickEditorialFormat(proposal, parsed.format as ContentFormat | undefined)
+      : pickTeaserFormat(proposal, parsed.format as ContentFormat | undefined);
   const copy = catalogCopyFromProposal(proposal, format);
   const visualDirection = buildVisualDirection(proposal, format);
 
@@ -140,15 +220,182 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
       "testo ricevuto dal modello ignorato: nel flusso catalogo la copy deriva dalla proposta."
     );
   }
+  warnings.push(...resolvedFlow.warnings);
+  warnings.push(
+    flow === "OFFER"
+      ? "flusso di pubblicazione: OFFER (post commerciale dalla locandina del catalogo)."
+      : "flusso di pubblicazione: TEASER (incuriosimento, senza prezzi né offerte)."
+  );
   warnings.push(
     `copy derivata dal Catalogo (proposta "${proposal.name}"): da rivedere e rifinire a mano.`
   );
-  if (!copy.usesCommercialData) {
+  // Nel teaser l'assenza di dati commerciali non è una mancanza da segnalare:
+  // è la regola del flusso. Il warning resta solo per l'offerta.
+  if (flow === "OFFER" && !copy.usesCommercialData) {
     warnings.push(
       "nessun dato commerciale in catalogo per questa proposta: la copy non cita prezzi, date, durata o servizi."
     );
   }
 
+  // Un VIDEO è sempre teaser (la risoluzione del flusso lo ha già deciso),
+  // ma non resta mai "solo DRAFT" se la generazione è possibile: la bozza nasce
+  // con le immagini della proposta già collegate, e l'orchestrazione video le
+  // scarica da sola (allowlist della fonte di catalogo) per il reel.
+  if (parsed.type === "VIDEO") {
+    const created = await svcCreateFromProposal({
+      proposalId: proposal.id,
+      type: "VIDEO",
+      title: copy.title,
+      caption: copy.caption,
+      hashtags: copy.hashtags,
+      platforms: parsed.platforms,
+    });
+
+    const video = await generateVideoForContent({
+      contentId: created.id,
+      query: placeOf(proposal) || proposal.name,
+    });
+    if (video.ok) {
+      const stored = await svcGet(created.id);
+      return {
+        ok: true,
+        message: created.proposalReused
+          ? `Esisteva già una bozza per "${proposal.name}": non ne ho creata un'altra.`
+          : `Video generato (${video.durationSec}s) dalla proposta "${proposal.name}" e collegato al contenuto, con la locandina.`,
+        data: {
+          ...(stored
+            ? contentBriefView(stored)
+            : { id: created.id, title: created.title, status: created.status }),
+          flow: "TEASER",
+          videoGenerated: true,
+          videoUrl: video.url,
+          videoAssetId: video.assetId,
+          assetId: video.assetId,
+          posterAssetId: video.posterAssetId,
+          withMedia: true,
+          catalogProposalId: proposal.id,
+          proposalName: proposal.name,
+          destination: proposal.destination,
+          place: placeOf(proposal),
+          editorialFormat: format,
+          availableFormats: availableFormats(proposal),
+          provenance: {
+            sourceUrl: proposal.sourceUrl,
+            sourceType: proposal.sourceType,
+            sourcePage: proposal.source.pageUrl,
+            authority: proposal.source.authority,
+          },
+          warnings,
+        },
+      };
+    }
+
+    // Generazione non riuscita: l'errore REALE torna al modello (ok:false),
+    // non un ripiego su caricamento manuale. La bozza resta, con le immagini
+    // della proposta e la locandina: è recuperabile con generateVideo o
+    // attachVideo senza rifare il lavoro.
+    const poster = await ensureVideoPoster(created.id);
+    warnings.push(`generazione video non riuscita: ${video.reason}`);
+    const stored = await svcGet(created.id);
+    return {
+      ok: false,
+      message: `Generazione video non riuscita per la proposta "${proposal.name}": ${video.reason}`,
+      data: {
+        ...(stored
+          ? contentBriefView(stored)
+          : { id: created.id, title: created.title, status: created.status }),
+        flow: "TEASER",
+        videoGenerated: false,
+        videoFailure: video.reason,
+        catalogProposalId: proposal.id,
+        proposalName: proposal.name,
+        destination: proposal.destination,
+        place: placeOf(proposal),
+        editorialFormat: format,
+        availableFormats: availableFormats(proposal),
+        withMedia: true,
+        posterAssetId: poster.ok ? poster.assetId : null,
+        provenance: {
+          sourceUrl: proposal.sourceUrl,
+          sourceType: proposal.sourceType,
+          sourcePage: proposal.source.pageUrl,
+          authority: proposal.source.authority,
+        },
+        warnings,
+      },
+    };
+  }
+
+  // Flusso TEASER su una proposta reale: il post parla del luogo con i suoi
+  // visual e non passa dal verticale della locandina. Nessun dato commerciale
+  // estratto, nessuna riga di offerta stampata: il DRAFT resta ancorato alla
+  // proposta (da cui arriva l'argomento), ma il visual è una fotografia del
+  // posto, come nel flusso senza catalogo. Lo stesso format commerciale che
+  // sarebbe stato qui stampato sul fotogramma non esiste più in questo ramo:
+  // `pickTeaserFormat` lo ha già escluso.
+  if (flow === "TEASER") {
+    const created = await svcCreate({
+      type: "POST",
+      title: copy.title,
+      caption: copy.caption,
+      hashtags: copy.hashtags,
+      platforms: parsed.platforms,
+      catalogProposalId: proposal.id,
+    });
+    const topic = placeOf(proposal) || proposal.name;
+    const visual = await attachStockVisual({
+      contentId: created.id,
+      destination: topic,
+      topic,
+      title: copy.title,
+      format,
+    });
+
+    if (visual.status === "failed") {
+      await svcDelete(created.id);
+      return {
+        ok: false,
+        message:
+          `Nessun contenuto creato: ${visual.reason} ` +
+          `Il DRAFT non è stato scritto, perché nessun post deve restare senza visual.`,
+        data: {
+          flow,
+          catalogFailure: "teaser_visual_failed",
+          createdContentId: null,
+          assetId: null,
+          catalogProposalId: proposal.id,
+          proposalName: proposal.name,
+          editorialFormat: format,
+          warnings,
+        },
+      };
+    }
+
+    const stored = await svcGet(created.id);
+    return {
+      ok: true,
+      message: `Bozza teaser creata in stato DRAFT dalla proposta "${proposal.name}": solo visual del luogo, senza prezzi né offerte.`,
+      data: {
+        ...(stored
+          ? contentBriefView(stored)
+          : { id: created.id, title: created.title, status: created.status }),
+        flow: "TEASER",
+        catalogProposalId: proposal.id,
+        proposalName: proposal.name,
+        destination: proposal.destination,
+        place: placeOf(proposal),
+        editorialFormat: format,
+        availableFormats: availableFormats(proposal),
+        withMedia: true,
+        assetId: visual.assetId,
+        warnings,
+      },
+    };
+  }
+
+  // Flusso OFFER: il verticale della locandina. La proposta reale fornisce la
+  // locandina, da cui sono estratti i dati commerciali che il fotogramma
+  // stampa; la creatività finale è rigenerata graficamente dall'agenzia.
   // 1. Il visuale, e con esso il DRAFT. Il servizio genera la fotografia,
   //    compone il fotogramma con il template dell'agenzia e scrive tutto
   //    insieme; l'originale del catalogo resta fuori, come provenienza.
@@ -179,6 +426,7 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
         catalogFailure: materialized.reason,
         createdContentId: null,
         assetId: null,
+        flow: "OFFER",
         catalogProposalId: proposal.id,
         proposalName: proposal.name,
         editorialFormat: format,
@@ -223,6 +471,7 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
       : "Post creato con successo in stato DRAFT. Lo trovi nella sezione Contenuti.",
     data: {
       ...brief,
+      flow: "OFFER",
       catalogProposalId: proposal.id,
       proposalName: proposal.name,
       destination: proposal.destination,
@@ -255,32 +504,44 @@ async function createFromCatalog(parsed: z.infer<typeof createSchema>) {
   };
 }
 
+/**
+ * Flusso CATALOGO, separato dalla chat.
+ *
+ * Il calendario/editorial engine usa direttamente questa per rigenerare le
+ * locandine del catalogo (flusso OFFER). NON è esposto al modello della chat:
+ * la chat crea solo post e video. Prende gli argomenti con lo schema completo
+ * (da cui `fromCatalog`/`catalogProposalId`/`flow`) e va su `createFromCatalog`.
+ */
+export async function executeCatalogContent(args: unknown) {
+  try {
+    const parsed = createSchema.parse(args);
+    return await createFromCatalog(parsed);
+  } catch (e) {
+    logAIError("tool.catalogContent", { tool: "createContent(catalog)" }, e);
+    return { ok: false, message: friendlyMessage(e), data: { createdContentId: null } };
+  }
+}
+
 export const createContentTool: AiTool = {
   name: "createContent",
   description:
     "Crea un nuovo Content in DRAFT: titolo, caption, hashtag, piattaforme e visual. È il tool da usare quando l'utente chiede di creare un post, un reel o un contenuto: non serve alcun contentId, perché il contenuto è nuovo. " +
-    "Passa sempre \"topic\" con l'argomento esatto chiesto (es. \"proposta Calabria\"): è un vincolo, titolo, testo e hashtag devono parlare solo di quello. Qualsiasi destinazione o argomento è ammesso, presente o meno nel Catalogo: crea il contenuto richiesto senza verificare l'esistenza della destinazione nel Catalogo. " +
+    "Passa sempre \"topic\" con l'argomento esatto chiesto (es. \"proposta Calabria\"): è un vincolo, titolo, testo e hashtag devono parlare solo di quello. Crea SEMPRE il contenuto richiesto, per qualsiasi destinazione o argomento, senza alcuna verifica esterna. " +
     "\"platforms\" è SEMPRE un array, es. [\"INSTAGRAM\", \"FACEBOOK\"], mai la stringa. \"type\" è \"POST\" o \"VIDEO\". " +
-    "Se l'utente chiede N post (es. \"3 post\", \"1 Grecia + 1 Maldive\") puoi chiamarlo PIÙ VOLTE nello stesso turno, una chiamata per post: ne crea TUTTI senza fermarti al primo. Usa un \"format\" diverso per ciascuno (STORYTELLING, TRAVEL_TIPS, ITINERARY, INSPIRATION, HERO_DESTINATION, FAQ) e un tema/angolazione diversa. Per un solo post basta una chiamata. " +
+    "Se l'utente chiede N post (es. \"3 post\", \"1 Grecia + 1 Maldive\") puoi chiamarlo PIÙ VOLTE nello stesso turno, una chiamata per post: ne crea TUTTI senza fermarti al primo. Usa un \"format\" diverso per ciascuno (TRAVEL_TIPS, ITINERARY, HERO_DESTINATION, FAQ) e un tema/angolazione diversa. Per un solo post basta una chiamata. " +
     "Per i CAROUSEL usa createCarousel. Ritorna l'id del contenuto creato. " +
-    "SENZA catalogo (solo \"topic\"): il visual viene SEMPRE recuperato cercandolo nella libreria stock (Magnific/Media) in base alla destinazione e applicandovi il layout/template, quindi il DRAFT nasce sempre con il suo visual già collegato. Se la libreria non ha nessuna immagine per quella destinazione, il visual viene GENERATO con il provider immagini su un prompt fotografico: il post non viene bloccato e il tool ti dice esplicitamente che l'immagine è generata e non reale. Se nemmeno la generazione riesce non viene creato alcun DRAFT (ok:false con il motivo), perché nessun post deve restare senza visual. " +
-    "Solo se l'utente chiede esplicitamente di ancorare il contenuto a una proposta del Catalogo passa \"fromCatalog\": true con \"destination\", oppure con \"catalogProposalId\" se l'hai già: il testo e il formato editoriale derivano dalla proposta reale, e il DRAFT nasce COMPLETO, visuale incluso. Il visuale è SEMPRE una vostra creatività e non la locandina del catalogo: una fotografia ad alta risoluzione generata sul tema della destinazione, con il template grafico dell'agenzia, il vostro logo (o il wordmark con il nome dell'agenzia) e i dati dell'offerta che il catalogo contiene davvero. La locandina del fornitore non viene usata come immagine né allegata al post. Se il visuale non può essere composto non viene creato alcun DRAFT: il tool ti restituisce ok:false con il motivo, e tu non devi riprovare a creare un contenuto a metà. " +
-    "\"withMedia\" è un parametro legacy/compatibilità: non controlla il visuale del flusso catalogo, non passarlo e non aspettarti che produca nulla. ",
+    "Il visual viene SEMPRE recuperato cercandolo nella libreria stock in base alla destinazione e applicandovi il layout/template, quindi il DRAFT nasce sempre con il suo visual già collegato. Se la libreria non ha nessuna immagine per quella destinazione, il visual viene GENERATO con il provider immagini su un prompt fotografico: il post non viene bloccato e il tool ti dice esplicitamente che l'immagine è generata e non reale. Se nemmeno la generazione riesce non viene creato alcun DRAFT (ok:false con il motivo), perché nessun post deve restare senza visual. " +
+    "Se l'utente fornisce un testo da stampare al centro del post (es. \"con testo: hotel 4★, mezza pensione, da € 2899\"), passalo come campo \"callout\" ESATTAMENTE come l'ha scritto, senza inventarlo: è un testo fornito dall'utente e non richiede alcun catalogo. ",
   brief: "Creazione contenuto",
-  schema: createSchema,
+  schema: createPostSchema,
   execute: async (args) => {
-    const parsed = createSchema.parse(args);
+    try {
+      const parsed = createPostSchema.parse(args);
 
-    // Flusso catalogo: attivo solo con un ancoraggio esplicito (fromCatalog o
-    // id di proposta). La destinazione da sola non lo attiva: una richiesta
-    // qualsiasi, per una destinazione presente o meno nel Catalogo, crea il
-    // DRAFT senza controlli di esistenza sul Catalogo.
-    const catalogFlow =
-      parsed.fromCatalog === true || Boolean(parsed.catalogProposalId?.trim());
-
-    if (catalogFlow) {
-      return createFromCatalog(parsed);
-    }
+    // Il teaser non ha format commerciali: un OFFER chiesto qui viene ignorato
+    // e dichiarato, non applicato in sordina.
+    const droppedOfferFormat = parsed.format === "OFFER";
+    const requestedFormat = droppedOfferFormat ? null : parsed.format;
 
     let content = await svcCreate({
       type: parsed.type,
@@ -292,6 +553,12 @@ export const createContentTool: AiTool = {
     });
 
     const warnings: string[] = [];
+    if (droppedOfferFormat) {
+      warnings.push(
+        "format OFFER non usabile nel flusso teaser: usato un format del luogo, senza prezzi né offerte."
+      );
+    }
+    warnings.push("flusso di pubblicazione: TEASER (incuriosimento, senza dati commerciali).");
     // Va letto subito: più sotto `content` viene riassegnato da `svcUpdate`, che
     // non riporterebbe le anomalie di relazione.
     const relationWarnings = content.relationWarnings ?? [];
@@ -309,8 +576,9 @@ export const createContentTool: AiTool = {
       topic,
       // Il formato e la destinazione guidano la struttura di titolo e caption:
       // senza, un post di consigli e un hero sulla stessa destinazione
-      // produrrebbero lo stesso testo.
-      format: parsed.format ?? null,
+      // produrrebbero lo stesso testo. Mai OFFER nel teaser: senza una proposta
+      // non ci sono dati commerciali veri da citare.
+      format: requestedFormat ?? null,
       destination: parsed.destination ?? null,
       title: content.title,
       caption: content.caption,
@@ -330,7 +598,63 @@ export const createContentTool: AiTool = {
       );
     }
 
-    // 2. Visual: dalla libreria stock; generato solo se la libreria è vuota per
+    // 2. VIDEO: pipeline completa e automatica, senza fermate intermedie.
+    //    a) il DRAFT è già creato; b) le clip arrivano dalla cartella curata
+    //    (poi stock) della destinazione; c) ffmpeg monta il reel verticale con
+    //    titolo + logo solo sulla prima clip. Il video non produce foto/locandina. Solo un
+    //    fallimento reale chiude il tool con ok:false.
+    if (parsed.type === "VIDEO") {
+      // Il video non nasce da una foto/locandina: il reel viene montato
+      // direttamente dalle clip video curate (public/curated/videos), poi stock.
+      // Titolo (nome destinazione) + logo vengono stampati SOLO sulla prima clip
+      // lato ffmpeg. Solo il fallimento del montaggio chiude il tool con ok:false,
+      // e la bozza viene rimossa per non lasciare DRAFT VIDEO vuoti.
+      const video = await generateVideoForContent({
+        contentId: content.id,
+        query: topic,
+        cleanSceneUrl: null,
+      });
+      if (!video.ok) {
+        // Errore REALE, non il ripiego "caricalo a mano".
+        await svcDelete(content.id);
+        return {
+          ok: false,
+          message:
+            `Nessun video creato: ${video.reason} ` +
+            "Nessuna clip video trovata per la destinazione. Il DRAFT è stato rimosso.",
+          data: {
+            createdContentId: null,
+            flow: "TEASER",
+            videoGenerated: false,
+            failureDetail: video.reason,
+            warnings,
+          },
+        };
+      }
+
+      const fresh = await svcGet(content.id);
+      return {
+        ok: true,
+        message: `Video generato (${video.durationSec}s) e collegato al contenuto. Lo trovi nella sezione Contenuti.`,
+        data: {
+          ...(fresh
+            ? contentBriefView(fresh)
+            : { id: content.id, title: content.title, status: content.status }),
+          flow: "TEASER",
+          topic: topic || null,
+          editorialFormat: parsed.format ?? null,
+          withMedia: true,
+          assetId: video.assetId,
+          videoGenerated: true,
+          videoUrl: video.url,
+          videoAssetId: video.assetId,
+          posterAssetId: video.posterAssetId,
+          warnings,
+        },
+      };
+    }
+
+    // 3. Visual: dalla libreria stock; generato solo se la libreria è vuota per
     //    quella destinazione. Qui non esiste un DRAFT senza immagine: se neppure
     //    la generazione riesce il contenuto appena scritto viene annullato e il
     //    tool risponde ok:false, perché "post senza visual" non è uno stato
@@ -341,6 +665,7 @@ export const createContentTool: AiTool = {
       topic,
       title: content.title,
       format: parsed.format ?? null,
+      callout: parsed.callout ?? null,
     });
 
     if (visual.status === "failed") {
@@ -353,6 +678,7 @@ export const createContentTool: AiTool = {
         data: {
           createdContentId: null,
           assetId: null,
+          flow: "TEASER",
           stockQuery: visual.query,
           withMedia: false,
           warnings,
@@ -405,9 +731,12 @@ export const createContentTool: AiTool = {
 
     return {
       ok: true,
+      // La frase è il contratto con l'utente e i test: il flusso (TEASER) è
+      // dichiarato nei data e nei warning, non nella frase.
       message: `Post creato con successo in stato DRAFT. Lo trovi nella sezione Contenuti.`,
       data: {
         ...contentBriefView(fresh ?? content),
+        flow: "TEASER",
         topic: topic || null,
         editorialFormat: parsed.format ?? null,
         withMedia: true,
@@ -416,6 +745,10 @@ export const createContentTool: AiTool = {
         warnings,
       },
     };
+    } catch (e) {
+      logAIError("tool.createContent", { tool: "createContent" }, e);
+      return { ok: false, message: friendlyMessage(e) };
+    }
   },
 };
 

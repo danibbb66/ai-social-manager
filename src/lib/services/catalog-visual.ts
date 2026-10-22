@@ -45,8 +45,7 @@
  * `Content.catalogProposalId`.
  */
 
-import fs from "node:fs/promises";
-import path from "node:path";
+import { readFileBuffer } from "@/lib/storage";
 import type { ContentAsset, ContentStatus, ContentType, Platform, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
@@ -696,9 +695,7 @@ export async function materializeCatalogVisual(
 
   let composed: Awaited<ReturnType<typeof composeOfferCreative>>;
   try {
-    const photoBuffer = await fs.readFile(
-      path.join(process.cwd(), "public", photo.url.replace(/^\//, ""))
-    );
+    const photoBuffer = await readFileBuffer(photo.url);
     composed = await composeOfferCreative({
       photo: photoBuffer,
       extraction,

@@ -16,7 +16,7 @@
  * che "Consigli di viaggio · Maldive" dice cosa sta dicendo il post, mentre
  * "Maldive" da solo dice solo dove.
  *
- * ## Perché tutti e sette
+ * ## Perché tutti e cinque
  *
  * La rubrica vale per ogni formato, perché ogni formato promette qualcosa che il
  * fotogramma non mostra: una domanda, un itinerario, tre consigli, un'offerta.
@@ -40,9 +40,9 @@ import type { ContentFormat } from "@/lib/ai/catalog-content";
  * fotogramma leggibile a colpo d'occhio.
  */
 const KICKER_BY_FORMAT: Partial<Record<ContentFormat, string>> = {
-  HERO_DESTINATION: "La destinazione",
-  STORYTELLING: "Il racconto",
-  INSPIRATION: "Il richiamo",
+  // HERO_DESTINATION non ha occhiello: un post "vetrina" deve mostrare SOLO il
+  // nome della destinazione, e "La destinazione" sopra il nome è una formula
+  // che non aggiunge nulla.
   TRAVEL_TIPS: "Consigli di viaggio",
   ITINERARY: "Itinerario",
   OFFER: "L'offerta",

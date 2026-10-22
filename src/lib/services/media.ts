@@ -1,6 +1,7 @@
 import { AssetKind, ContentAsset, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
+import { assetKindFromMime } from "@/lib/utils";
 
 export interface AssetInput {
   url: string;
@@ -65,7 +66,9 @@ export async function createAsset(input: AssetInput): Promise<ContentAsset> {
       filename,
       mimeType: input.mimeType ?? null,
       size: input.size ?? null,
-      kind: input.kind ?? "IMAGE",
+      // Senza kind esplicito lo decide il MIME reale: un video non deve
+      // finire registrato come IMAGE per omissione del chiamante.
+      kind: input.kind ?? assetKindFromMime(input.mimeType),
       contentId: input.contentId ?? null,
       metadata: (input.metadata as Prisma.InputJsonValue) ?? undefined,
     },

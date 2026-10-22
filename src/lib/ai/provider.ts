@@ -27,6 +27,15 @@ export interface AiChatOptions {
   numCtx?: number;
   /** Tetto di token generati per questa chiamata (default del provider) */
   numPredict?: number;
+  /**
+   * Timeout di inattività per questa chiamata (ms): la richiesta viene
+   * abortita se il provider non produce nulla per questo tempo. La
+   * configurazione applicativa (OLLAMA_TIMEOUT_MS) ha il minimo di 60s;
+   * questo override è un canale esplicito in codice per test e diagnostica.
+   */
+  idleTimeoutMs?: number;
+  /** Tetto totale della richiesta (ms), rete di sicurezza contro stream infiniti. */
+  totalTimeoutMs?: number;
 }
 
 export interface AiCompletion {

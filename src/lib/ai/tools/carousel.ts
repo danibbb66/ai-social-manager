@@ -1,10 +1,8 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { generateWithBrand, recordJob, finishJob, tryParseJson } from "@/lib/ai/generate";
-import { getContentOrThrow, createContent, updateContent } from "@/lib/services/content";
-import { createAsset } from "@/lib/services/media";
-import { getVideoProvider } from "@/lib/video/factory";
-import { VideoGenerationUnavailableError } from "@/lib/video/provider";
+import { getContent, getContentOrThrow, createContent } from "@/lib/services/content";
+import { generateVideoForContent } from "@/lib/services/video";
 import { logAudit } from "@/lib/audit";
 import { logAIError } from "@/lib/logger";
 import { friendlyMessage } from "@/lib/errors/user-message";
@@ -140,69 +138,62 @@ export const createCarouselTool: AiTool = {
 export const generateVideoTool: AiTool = {
   name: "generateVideo",
   description:
-    "Genera un video/reel (slideshow) locale dalle immagini delle slide del contenuto, usando ffmpeg. Aggrega il video al contenuto e lo imposta come tipo VIDEO. Richiede che il contenuto abbia slide con immagini.",
+    "Genera il video/reel (slideshow) di un contenuto GIÀ esistente, usando ffmpeg: fotogrammi dalle slide con immagine o dagli asset immagine (incluse le immagini di una proposta di catalogo, che vengono scaricate automaticamente). NON crea contenuti nuovi e richiede un contentId REALE, preso da createContent o listContents. Per creare un VIDEO da una destinazione (es. 'crea un video per Zanzibar') usa createContent con type: \"VIDEO\", che crea la bozza e genera già il video da solo. Imposta il contenuto come tipo VIDEO e vi collega la locandina. ATTENZIONE: richiede VIDEO_PROVIDER/ffmpeg configurato; se risponde che la generazione non è disponibile NON ritentare e non inventare strumenti alternativi: la bozza VIDEO si completa caricando il file video dall'editor o collegandone uno dalla libreria con attachVideo.",
   brief: "Generazione video",
   schema: z.object({
     contentId: z.string().describe("Id del contenuto con slide/immagini"),
-    durationPerSlide: z.number().min(1).max(15).optional().describe("Durata di ogni slide in secondi"),
+    durationPerSlide: z.number().min(1).max(15).optional().describe("Durata di ogni immagine in secondi"),
+    query: z.string().optional().describe("Parole chiave della destinazione: con poche immagini sul contenuto, la Media Library viene cercata per aggiungere scene al reel"),
   }),
   execute: async (args) => {
-    const parsed = z.object({ contentId: z.string(), durationPerSlide: z.number().optional() }).parse(args);
-    const content = await getContentOrThrow(parsed.contentId);
+    try {
+      const parsed = z.object({ contentId: z.string(), durationPerSlide: z.number().optional(), query: z.string().optional() }).parse(args);
 
-    const slides = content.slides.filter((s) => s.imageUrl);
-    if (slides.length === 0) {
-      return {
-        ok: false,
-        message: "Nessuna immagine nelle slide: il contenuto deve avere almeno una slide con immagine per generare il video.",
-      };
+      // Il tool richiede un contenuto ESISTENTE: un id inventato (es. il titolo
+      // della destinazione) non è un contenuto, e va guidato verso createContent
+      // invece di far girare l'ennesima eccezione "Contenuto non trovato".
+      if (!(await getContent(parsed.contentId))) {
+        return {
+          ok: false,
+          message: `Il contenuto "${parsed.contentId}" non esiste. Per creare un VIDEO da una destinazione (es. "crea un video per Zanzibar") usa createContent con type: "VIDEO", senza contentId: questo tool serve solo per contenuti già creati.`,
+        };
+      }
+
+    // L'orchestrazione (fotogrammi, download delle immagini remote, provider,
+    // asset, locandina) sta tutta nel servizio: qui restano solo il job e il
+    // rendiconto per il modello.
+    const job = await recordJob("VIDEO", { contentId: parsed.contentId });
+    const result = await generateVideoForContent(parsed);
+
+    if (!result.ok) {
+      await finishJob(job.id, false, undefined, result.reason);
+      return { ok: false, message: result.reason };
     }
 
-    const job = await recordJob("VIDEO", { contentId: content.id, slides: slides.length });
-    const video = getVideoProvider();
-
-    try {
-      if (!video.canGenerate) {
-        throw new VideoGenerationUnavailableError(
-          "Generatore video non disponibile (VIDEO_PROVIDER non abilitato o ffmpeg mancante)."
-        );
-      }
-      const gen = await video.generateSlideshow(
-        slides.map((s) => ({
-          imagePath: s.imageUrl!,
-          durationSec: parsed.durationPerSlide ?? (slides.length > 1 ? 3 : 5),
-        })),
-        { width: 1080, height: 1920, fps: 25 }
-      );
-
-      const asset = await createAsset({
-        url: gen.url,
-        filename: gen.url.split("/").pop() ?? "reel.mp4",
-        mimeType: "video/mp4",
-        kind: "VIDEO",
-        contentId: content.id,
-      });
-
-      const updated = await updateContent(content.id, {
-        type: "VIDEO",
-        scheduledDate: null,
-      });
-
-      await finishJob(job.id, true, { url: gen.url, durationSec: gen.durationSec, assetId: asset.id });
-      await logAudit("VIDEO_GENERATED", "ContentAsset", asset.id, { contentId: content.id, durationSec: gen.durationSec });
-      return {
-        ok: true,
-        // Il file generato resta in `data`, dove il modello e il chiamante lo
-        // trovano: la frase per l'utente non contiene il percorso, perché un
-        // percorso di file è un dettaglio della macchina e non una risposta.
-        message: `Video generato (${gen.durationSec}s) e collegato al contenuto.`,
-        data: { contentId: updated.id, url: gen.url, durationSec: gen.durationSec, assetId: asset.id },
-      };
+    await finishJob(job.id, true, {
+      url: result.url,
+      durationSec: result.durationSec,
+      assetId: result.assetId,
+      posterAssetId: result.posterAssetId,
+    });
+    return {
+      ok: true,
+      // Il file generato resta in `data`, dove il modello e il chiamante lo
+      // trovano: la frase per l'utente non contiene il percorso, perché un
+      // percorso di file è un dettaglio della macchina e non una risposta.
+      message: `Video generato (${result.durationSec}s) e collegato al contenuto${result.posterAssetId ? ", con la locandina" : ""}.`,
+      data: {
+        contentId: parsed.contentId,
+        url: result.url,
+        durationSec: result.durationSec,
+        assetId: result.assetId,
+        posterAssetId: result.posterAssetId,
+        provider: result.provider,
+      },
+    };
     } catch (e) {
-      const message = friendlyMessage(e);
-      logAIError("tool.generateVideo", { contentId: content.id }, e);
-      await finishJob(job.id, false, undefined, message);
-      return { ok: false, message };
+      logAIError("tool.generateVideo", { tool: "generateVideo" }, e);
+      return { ok: false, message: friendlyMessage(e) };
     }
   },
 };

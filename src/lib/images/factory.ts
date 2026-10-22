@@ -2,6 +2,7 @@ import { ImageProvider } from "@/lib/images/provider";
 import { ManualImageProvider } from "@/lib/images/manual";
 import { MagnificImageProvider } from "@/lib/images/magnific";
 import { MagnificStockProvider, StockProvider } from "@/lib/images/stock";
+import { getPixabayStockProvider } from "@/lib/images/pixabay";
 import { config } from "@/lib/env";
 
 let cached: ImageProvider | null = null;
@@ -51,14 +52,16 @@ export function getImageProvider(): ImageProvider {
 /**
  * Factory del provider della libreria stock.
  *
- * È la sola fonte dei visual recuperati per i post generici: cerca immagini
- * reali per destinazione, non ne genera mai. Senza MAGNIFIC_API_KEY il
- * provider risponde "nessun risultato" e il chiamante decide (ricerca nella
- * Media Library, poi nessun DRAFT).
+ * È la fonte dei visual reali (fotografie) per i post: cerca immagini per
+ * destinazione, non ne genera mai. Pixabay è la prima scelta (gratuito, nessun
+ * limite di download/giorno); Magnific resta come ripiego solo senza chiave
+ * Pixabay, perché i suoi crediti sono condivisi col catalogo e limitati. Senza
+ * nessuna chiave il provider risponde "nessun risultato" e il chiamante decide
+ * (ricerca nella Media Library, poi nessun DRAFT).
  */
 export function getStockProvider(): StockProvider {
   if (stockOverride) return stockOverride;
   if (stockCached) return stockCached;
-  stockCached = new MagnificStockProvider();
+  stockCached = getPixabayStockProvider() ?? new MagnificStockProvider();
   return stockCached;
 }

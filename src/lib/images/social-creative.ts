@@ -28,14 +28,39 @@ import { commercialLines } from "@/lib/catalog/commercial-extraction";
 
 /** Formato quadrato: la sposta sicura per ogni piattaforma, come nel resto dell'app. */
 export const SOCIAL_CREATIVE_SIZE = 1080;
+/**
+ * Altezza del fotogramma verticale del POST (4:5): 1080×1350.
+ *
+ * È lo standard dei post immagine su Instagram/Facebook feed: un'immagine
+ * statica più alta di 4:5 (es. 9:16) viene ritagliata da Instagram, perdendo
+ * titolo/logo. I VIDEO restano 9:16 (1080×1920) perché sono reel, gestiti
+ * separatamente in `src/lib/video/ffmpeg.ts`.
+ */
+export const SOCIAL_CREATIVE_HEIGHT = 1350;
 
 export interface SocialCreativeInput {
   /** Fotografia del generatore: il fondo della creatività. */
   photo: Buffer;
+  /**
+   * Orientamento del fotogramma.
+   *
+   * `portrait` (4:5, 1080×1350) è usato dai post teaser (vetrina/tips/
+   * itinerario): è il formato verticale corretto per il feed IG/FB. Il flusso
+   * catalogo/locandina resta `square` (1080×1080) finché non viene trattato
+   * separatamente.
+   */
+  orientation?: "square" | "portrait";
   /** Titolo in evidenza: destinazione o titolo della proposta. */
   title: string;
   /** Riga secondaria: nome della proposta o formato editoriale. */
   subtitle?: string | null;
+  /**
+   * Testo "gancio" centrato, stampato su un banner semitrasparente sopra la
+   * foto (es. "hotel 4★, mezza pensione, date a richiesta"). Lo fornisce
+   * l'utente dalla chat: non deriva né dal catalogo né dal modello. Se manca,
+   * il post resta solo con il titolo della destinazione.
+   */
+  callout?: string | null;
   /**
    * Occhiello: la rubrica del contenuto, stampata sopra il titolo.
    *
@@ -181,7 +206,7 @@ function textWidth(text: string, fontSize: number, bold: boolean): number {
 }
 
 /** Corpo di partenza del titolo, in rapporto al lato della creatività. */
-const TITLE_SIZE_RATIO = 0.072;
+const TITLE_SIZE_RATIO = 0.14;
 
 /** Corpo minimo sotto al quale il testo non si legge più su uno schermo. */
 const TITLE_MIN_SIZE_RATIO = 0.04;
@@ -213,6 +238,30 @@ const KICKER_PILL_SIZE_RATIO = 0.026;
 
 /** Vuoto fra la pill e la prima riga del titolo, in rapporto al lato. */
 const KICKER_PILL_PADDING_RATIO = 0.045;
+
+/**
+ * Sfumature calde per il titolo, in rotazione: ogni post riceve un accento
+ * diverso in modo deterministico dal proprio titolo, così due post non hanno
+ * mai lo stesso identico titolo. Il bianco in alto è comune a tutti: è ciò che
+ * tiene il corpo del testo luminoso e leggibile, l'accento colora la base.
+ */
+const TITLE_ACCENTS: ReadonlyArray<{ mid: string; bottom: string }> = [
+  { mid: "#ffedb8", bottom: "#ffd166" }, // oro
+  { mid: "#ffd9a8", bottom: "#ff9a3d" }, // arancione (tramonto)
+  { mid: "#c8f5d8", bottom: "#34d399" }, // verde
+  { mid: "#c4f4ee", bottom: "#2dd4bf" }, // turchese (mare)
+  { mid: "#ffd8d3", bottom: "#ff7a6e" }, // corallo
+  { mid: "#cfe7ff", bottom: "#54b8ff" }, // azzurro (cielo)
+];
+
+/** Indice stabile di un accento dal titolo: stesso posto, stesso colore. */
+export function accentForTitle(title: string): { mid: string; bottom: string } {
+  let hash = 0;
+  for (let i = 0; i < title.length; i += 1) {
+    hash = (hash * 31 + title.charCodeAt(i)) >>> 0;
+  }
+  return TITLE_ACCENTS[hash % TITLE_ACCENTS.length];
+}
 
 interface TitleBox {
   /** Larghezza utile per i glifi: padding e alone già scalati. */
@@ -351,8 +400,15 @@ function haloWidthOf(size: number): number {
 /** Interruttori della card, in rapporto al lato. */
 const CARD_RADIUS_RATIO = 0.026;
 const CARD_PAD_RATIO = 0.052;
+/** Padding della card quando contiene solo il titolo: aderisce al testo. */
+const CARD_PAD_TITLE_RATIO = 0.026;
 const CARD_MIN_TOP_RATIO = 0.1;
 const CARD_MAX_BOTTOM_RATIO = 0.9;
+
+/** Altezza del logo, in rapporto al lato: ben visibile sotto il banner. */
+const LOGO_HEIGHT_RATIO = 0.25;
+/** Margine dal fondo del logo, in rapporto all'altezza: il logo sta sotto il banner. */
+const LOGO_BOTTOM_MARGIN_RATIO = 0.06;
 
 /** Corpo di partenza del testo dei punti, in rapporto al lato. */
 const POINT_SIZE_RATIO = 0.024;
@@ -503,37 +559,40 @@ interface CardBox {
  */
 function cardBox(input: {
   size: number;
+  /** Altezza del fotogramma: la card si ancora al bordo inferiore di questa. */
+  canvasHeight: number;
   contentWidth: number;
   contentHeight: number;
   hasSubtitle: boolean;
   hasCommercial: boolean;
   hasPoints?: boolean;
 }): CardBox {
-  const { size, contentWidth, contentHeight, hasSubtitle, hasCommercial, hasPoints } = input;
-  const padding = Math.round(size * CARD_PAD_RATIO);
+  const { size, canvasHeight, contentWidth, contentHeight, hasSubtitle, hasCommercial, hasPoints } = input;
+  // Un blocco senza dati e senza sottotitolo è solo un titolo: in quel caso la
+  // card si stringe sia in larghezza sia in padding, perché un rettangolo
+  // grande per tre parole sembrerebbe vuoto e squilibrato. Con i punti o un
+  // listino dentro, invece, la card è il contenuto e va lasciata respirare.
+  const emptyish = !hasSubtitle && !hasCommercial && !hasPoints;
+  const padding = Math.round(size * (emptyish ? CARD_PAD_TITLE_RATIO : CARD_PAD_RATIO));
   const radius = Math.round(size * CARD_RADIUS_RATIO);
 
   const maxWidth = Math.round(size * 0.9);
   const minWidth = Math.round(size * 0.56);
-  // Un blocco senza dati e senza sottotitolo è solo un titolo: in quel caso la
-  // card si stringe, perché un rettangolo grande per tre parole sembrerebbe
-  // vuoto e squilibrato. Con i punti dentro, invece, la card è il contenuto e
-  // stringerla farebbe andare ogni consiglio a capo due volte.
-  const emptyish = !hasSubtitle && !hasCommercial && !hasPoints;
   const width = Math.min(
     maxWidth,
-    Math.max(emptyish ? Math.round(size * 0.44) : minWidth, Math.ceil(contentWidth) + padding * 2)
+    Math.max(emptyish ? 0 : minWidth, Math.ceil(contentWidth) + padding * 2)
   );
 
   const height = Math.ceil(contentHeight) + padding * 2;
 
-  // La fascia è ancorata al basso: la card sale con i dati che contiene e
-  // resta ferma quando non ce ne sono, così due post sullo stesso formato
-  // hanno il titolo alla stessa altezza.
-  const bottomLimit = Math.round(size * CARD_MAX_BOTTOM_RATIO);
-  const topLimit = Math.round(size * CARD_MIN_TOP_RATIO);
-  let y = bottomLimit - height;
-  if (y < topLimit) y = topLimit;
+  // La fascia è ancorata IN ALTO al centro: il nome della destinazione vive
+  // sempre in cima alla creatività. La card cresce verso il basso quando
+  // contiene anche punti o listino, e resta comunque entro il limite inferiore
+  // del fotogramma.
+  const topLimit = Math.round(canvasHeight * CARD_MIN_TOP_RATIO);
+  const bottomLimit = Math.round(canvasHeight * CARD_MAX_BOTTOM_RATIO);
+  let y = topLimit;
+  if (y + height > bottomLimit) y = bottomLimit - height;
 
   return { x: Math.round((size - width) / 2), y, width, height, radius, padding };
 }
@@ -598,10 +657,11 @@ function wordmarkSvg(input: {
 
 async function brandWordmarkOverlay(input: {
   size: number;
-  pad: number;
+  /** Altezza del fotogramma: posiziona il marchio sotto il banner. */
+  height: number;
   name: string;
 }): Promise<{ overlay: OverlayOptions } | null> {
-  const { size, pad, name } = input;
+  const { size, height, name } = input;
 
   const words = name.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
   if (words.length === 0) return null;
@@ -633,11 +693,12 @@ async function brandWordmarkOverlay(input: {
     const meta = await sharp(trimmed).metadata();
     const measured = meta.width ?? 0;
     if (measured > 0 && measured <= maxWidth) {
+      const markHeight = meta.height ?? canvasHeight;
       return {
         overlay: {
           input: trimmed,
-          left: size - pad - measured,
-          top: Math.round(size * 0.045),
+          left: Math.round((size - measured) / 2),
+          top: height - markHeight - Math.round(size * LOGO_BOTTOM_MARGIN_RATIO),
         },
       };
     }
@@ -673,9 +734,18 @@ function buildOverlay(input: {
   card: CardBox;
   rowHeight: number;
   subtitleH: number;
+  /** Altezza del fotogramma verticale. */
+  height: number;
+  /** Accento del titolo, scelto dal renderer in base al nome della destinazione. */
+  accent: { mid: string; bottom: string };
 }): string {
-  const { size, title, kicker, subtitle, commercial, points, card, rowHeight, subtitleH } = input;
+  const { size, title, kicker, subtitle, commercial, points, card, rowHeight, subtitleH, height, accent } = input;
   const family = "Arial, Helvetica, sans-serif";
+  // Senza dati né punti la card è solo un contenitore per il titolo: si toglie
+  // del tutto e il titolo poggia direttamente sulla foto (velatura in basso +
+  // alone scuro). Con punti o listino dentro, invece, la card resta il fondo
+  // che rende leggibili le righe.
+  const emptyish = !subtitle && commercial.length === 0 && points.points.length === 0;
   // Spessore dell'alone in unità utente: abbastanza da staccare i glyph dal
   // fondo della card, abbastanza poco da non impastare il corpo del carattere.
   // Dentro una card scura l'alone serve meno che sulla foto, ma resta: il
@@ -716,7 +786,9 @@ function buildOverlay(input: {
       `font-weight="700" font-family="${family}"`;
     layers.push({
       halo: `<text ${attrs} ${haloAttrs}>${esc(line)}</text>`,
-      fill: `<text ${attrs} fill="#ffffff">${esc(line)}</text>`,
+      // Il titolo usa una sfumatura calda oro-champagne invece del bianco
+      // piatto: resta luminoso su qualsiasi foto ma ha più carattere.
+      fill: `<text ${attrs} fill="url(#titleFill)">${esc(line)}</text>`,
     });
   });
 
@@ -838,21 +910,21 @@ function buildOverlay(input: {
     .join("\n");
   const fills = layers.map((l) => `  ${l.fill}`).join("\n");
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${height}">
   <defs>
     <!--
-      Il gradiente è il pavimento della scena: scurisce il bordo inferiore, dove
-      sta la card, e sfuma verso l'alto lasciando la foto libera al centro. Il
-      testo non ci poggia più direttamente sopra, quindi la velatura non ha più
-      il compito di garantire il contrasto del titolo: serve a dare profondità
-      e a far emergere il blocco come un elemento davanti alla foto.
+      Il gradiente scurisce il bordo superiore, dove ora sta la card con il
+      nome della destinazione, e sfuma verso il basso lasciando la foto libera
+      al centro. Il testo non ci poggia più direttamente sopra, quindi la
+      velatura non ha più il compito di garantire il contrasto del titolo:
+      serve a dare profondità e a far emergere il blocco davanti alla foto.
     -->
-    <linearGradient id="veil" x1="0.15" y1="1" x2="0.6" y2="0">
-      <stop offset="0%" stop-color="#05070b" stop-opacity="0.82"/>
-      <stop offset="30%" stop-color="#05070b" stop-opacity="0.5"/>
+    <linearGradient id="veil" x1="0.15" y1="0" x2="0.6" y2="1">
+      <stop offset="0%" stop-color="#05070b" stop-opacity="0.8"/>
+      <stop offset="30%" stop-color="#05070b" stop-opacity="0.48"/>
       <stop offset="55%" stop-color="#05070b" stop-opacity="0.22"/>
       <stop offset="78%" stop-color="#05070b" stop-opacity="0.12"/>
-      <stop offset="100%" stop-color="#05070b" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#05070b" stop-opacity="0.26"/>
     </linearGradient>
     <!--
       La card è "glass": quasi nera ma non opaca, con un bordo chiaro che la
@@ -870,6 +942,16 @@ function buildOverlay(input: {
       <stop offset="100%" stop-color="#ffffff" stop-opacity="0.26"/>
     </linearGradient>
     <!--
+      Sfumatura del titolo: dal bianco caldo al dorato. È un accento caldo che
+      non dipende dalla foto dietro e dà al nome della destinazione un tono
+      più ricco del bianco piatto, restando leggibile grazie all'alone scuro.
+    -->
+    <linearGradient id="titleFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="50%" stop-color="${accent.mid}"/>
+      <stop offset="100%" stop-color="${accent.bottom}"/>
+    </linearGradient>
+    <!--
       Il riflesso è un tocco di luce sul bordo inferiore del frame: senza, il
       fondo è un blocco piatto e la card sembra appoggiata a un muro.
     -->
@@ -879,14 +961,122 @@ function buildOverlay(input: {
       <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <rect width="${size}" height="${size}" fill="url(#veil)"/>
-  <rect width="${size}" height="${size}" fill="url(#sheen)"/>
-  <rect x="${card.x}" y="${card.y}" width="${card.width}" height="${card.height}" ` +
-    `rx="${card.radius}" fill="url(#cardFill)" stroke="url(#cardStroke)" ` +
-    `stroke-width="${Math.max(1, Math.round(size * 0.0022))}"/>
+  <rect width="${size}" height="${height}" fill="url(#veil)"/>
+  <rect width="${size}" height="${height}" fill="url(#sheen)"/>
+${emptyish
+    ? ""
+    : `<rect x="${card.x}" y="${card.y}" width="${card.width}" height="${card.height}" rx="${card.radius}" fill="url(#cardFill)" stroke="url(#cardStroke)" stroke-width="${Math.max(1, Math.round(size * 0.0022))}"/>`}
 ${badges.join("\n")}
 ${halos}
 ${fills}
+</svg>`;
+}
+
+/** Corpo di partenza del testo gancio, in rapporto al lato (≈65px su 1080). */
+const CALLOUT_SIZE_RATIO = 0.06;
+/** Corpo minimo del gancio. */
+const CALLOUT_MIN_SIZE_RATIO = 0.026;
+/** Larghezza massima del banner del gancio, in rapporto al lato. */
+const CALLOUT_MAX_WIDTH_RATIO = 0.74;
+/**
+ * Numero massimo di righe del gancio.
+ *
+ * Il gancio è separato in righe sulle virgole (struttura verticale), quindi il
+ * tetto sale per accogliere più segmenti senza tagliare il testo dell'utente.
+ */
+const CALLOUT_MAX_LINES = 7;
+/** Padding orizzontale del banner, in rapporto al lato. */
+const CALLOUT_PAD_RATIO = 0.036;
+/** Posizione verticale del centro del gancio, rispetto all'altezza. */
+const CALLOUT_V_CENTER_RATIO = 0.52;
+
+/**
+ * Testo "gancio" centrato su un banner semitrasparente.
+ *
+ * È un elemento separato dalla card: vive al centro del fotogramma, sopra la
+ * foto, e dà al post una promessa concreta ("hotel 4★, mezza pensione…") che
+ * la sola destinazione non dà. Il testo arriva dall'utente; se manca, il post
+ * resta solo con il titolo. Il banner ha il fondo scuro-semitrasparente:
+ * sopra un cielo luminoso un testo bianco puro non si leggerebbe.
+ */
+function buildCallout(input: {
+  size: number;
+  height: number;
+  text: string | null | undefined;
+}): string | null {
+  const { size, height } = input;
+  const trimmed = (input.text ?? "").replace(/\s+/g, " ").trim();
+  if (!trimmed) return null;
+
+  const maxWidth = Math.round(size * CALLOUT_MAX_WIDTH_RATIO);
+  const baseFontSize = Math.round(size * CALLOUT_SIZE_RATIO);
+  const minFontSize = Math.round(size * CALLOUT_MIN_SIZE_RATIO);
+
+  // L'utente separa i concetti con le virgole ("hotel 4★, mezza pensione, da
+  // €…"): ogni segmento va su una riga propria, così il gancio diventa una
+  // struttura verticale leggibile invece di un unico blocco di testo. Anche la
+  // coppia "dal … al …" della data si spezza su due righe. I segmenti più lunghi
+  // vanno a capo a parole sulla larghezza massima, senza perdere nulla.
+  const segments = trimmed
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .flatMap((s) => s.split(/\s+(?=al\s+)/i).map((p) => p.trim()))
+    .filter((s) => s.length > 0);
+
+  let fontSize = baseFontSize;
+  let lines: string[] = [];
+  for (;;) {
+    lines = segments.flatMap((segment) =>
+      layoutWords(segment.split(" ").filter(Boolean), maxWidth, fontSize)
+    );
+    if (lines.length <= CALLOUT_MAX_LINES) break;
+    if (fontSize <= minFontSize) break;
+    fontSize = Math.max(minFontSize, Math.floor(fontSize * 0.9));
+  }
+  if (lines.length > CALLOUT_MAX_LINES) {
+    lines = trimLines(lines, CALLOUT_MAX_LINES, fontSize, maxWidth);
+  }
+  if (lines.length === 0) return null;
+
+  const step = Math.max(1, Math.round(fontSize * 1.26));
+  const firstBaseline = Math.round(fontSize * 1.05);
+  const textBlockH =
+    firstBaseline + Math.max(0, lines.length - 1) * step + Math.round(fontSize * 0.24);
+  const maxLineW = Math.max(...lines.map((line) => textWidth(line, fontSize, true)), 1);
+
+  const padX = Math.round(size * CALLOUT_PAD_RATIO);
+  const padY = Math.round(size * CALLOUT_PAD_RATIO * 0.6);
+  const bannerW = Math.round(maxLineW) + padX * 2;
+  const bannerH = Math.round(textBlockH) + padY * 2;
+  const bannerX = Math.round((size - bannerW) / 2);
+  const centerY = Math.round(height * CALLOUT_V_CENTER_RATIO);
+  const bannerY = Math.round(centerY - bannerH / 2);
+  const radius = Math.round(size * 0.028);
+
+  const family = "Arial, Helvetica, sans-serif";
+  const haloWidth = Math.round(size * 0.006);
+  const haloAttrs =
+    `fill="#0b0f14" fill-opacity="0.5" stroke="#0b0f14" stroke-opacity="0.5" ` +
+    `stroke-width="${haloWidth}" stroke-linejoin="round"`;
+  const centerX = Math.round(size / 2);
+
+  const textLayers = lines
+    .map((line, i) => {
+      const y = bannerY + padY + firstBaseline + i * step;
+      const attrs =
+        `x="${centerX}" y="${y}" text-anchor="middle" font-size="${fontSize}" ` +
+        `font-weight="600" font-family="${family}"`;
+      return (
+        `<text ${attrs} ${haloAttrs}>${esc(line)}</text>` +
+        `<text ${attrs} fill="#ffffff">${esc(line)}</text>`
+      );
+    })
+    .join("\n");
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${height}">
+  <rect x="${bannerX}" y="${bannerY}" width="${bannerW}" height="${bannerH}" rx="${radius}" fill="#0b1119" fill-opacity="0.68" stroke="#ffffff" stroke-opacity="0.26" stroke-width="${Math.max(1, Math.round(size * 0.002))}"/>
+${textLayers}
 </svg>`;
 }
 
@@ -899,6 +1089,7 @@ ${fills}
  */
 export async function renderSocialCreative(input: SocialCreativeInput): Promise<RenderedSocialCreative> {
   const size = SOCIAL_CREATIVE_SIZE;
+  const height = input.orientation === "portrait" ? SOCIAL_CREATIVE_HEIGHT : size;
   const title = input.title.trim();
   if (!title) throw new Error("Titolo mancante: non si può comporre la creatività.");
   if (input.photo.length === 0) throw new Error("Fotografia mancante: non si può comporre la creatività.");
@@ -990,10 +1181,12 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
 
     const titleLayout = wrapTitle(title, {
       maxWidth: cardInnerMax,
-      maxBottom: Math.min(
-        kickerBlockH + belowTitle,
-        contentHeight
-      ),
+      // Il titolo può occupare tutto lo spazio che `contentHeight` gli ha
+      // riservato (sottotitolo, punti e righe commerciali sono già sottratti).
+      // Il precedente `Math.min(kickerBlockH + belowTitle, …)` schiacciava a 0
+      // il titolo dei post senza punti/sottotitolo, forzando sempre il corpo
+      // minimo: per questo il titolo sembrava non crescere mai.
+      maxBottom: contentHeight,
       firstBaseline: kickerBlockH + Math.round(size * TITLE_SIZE_RATIO * 1.05),
       baseFontSize: Math.round(size * TITLE_SIZE_RATIO),
       baseStep: Math.round(size * TITLE_SIZE_RATIO * TITLE_STEP_RATIO),
@@ -1067,11 +1260,15 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
     titleWidthPx,
     kickerWidthPx,
     pointsWidthPx,
-    textWidth("MMM", Math.round(size * 0.029), true) * 12
+    // La larghezza minima per il listino serve solo quando ci sono righe
+    // commerciali: un titolo da solo deve stringere la card al proprio testo,
+    // un listino no (le etichette lunghe vanno a capo male in una card stretta).
+    commercialRows.length > 0 ? textWidth("MMM", Math.round(size * 0.029), true) * 12 : 0
   );
 
   const card = cardBox({
     size,
+    canvasHeight: height,
     contentWidth,
     contentHeight: fitted.contentHeight,
     hasSubtitle: Boolean(subtitle),
@@ -1098,33 +1295,34 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
       })()
     : null;
 
-  // Il marchio entra nello slot in alto a destra. Il logo file ha la preceden-
-  // za; quando manca, il wordmark con il nome dell'agenzia prende lo stesso
-  // slot, così ogni post esce con il marchio di chi lo ha prodotto. Nessun
-  // segno viene inventato: i due casi hanno una sola sorgente ciascuno.
+  // Il marchio sta SOTTO il banner del gancio, centrato orizzontalmente. Il
+  // logo file ha la precedenza; quando manca, il wordmark con il nome
+  // dell'agenzia prende lo stesso posto, così ogni post esce con il marchio di
+  // chi lo ha prodotto. Nessun segno viene inventato: i due casi hanno una sola
+  // sorgente ciascuno.
   let brandOverlay: OverlayOptions | null = null;
   let brandMark: BrandMarkKind | null = null;
   if (input.brandLogo && input.brandLogo.buffer.length > 0) {
     const resized = await sharp(input.brandLogo.buffer)
-      .resize({ height: Math.round(size * 0.05), fit: "inside", withoutEnlargement: true })
+      .resize({ height: Math.round(size * LOGO_HEIGHT_RATIO), fit: "inside", withoutEnlargement: true })
       .png()
       .toBuffer();
     // La larghezza va letta dai metadati: dai byte del buffer si metterebbe il
     // logo fuori dal bordo, e un'immagine di terzi appena un po' larga
     // finirebbe tagliata a metà.
     const meta = await sharp(resized).metadata();
-    const logoHeight = Math.round(size * 0.05);
+    const logoHeight = Math.round(size * LOGO_HEIGHT_RATIO);
     const logoWidth = Math.max(1, Math.min(Math.round(size * 0.35), meta.width ?? logoHeight));
     brandOverlay = {
       input: resized,
-      left: size - pad - logoWidth,
-      top: Math.round(size * 0.045),
+      left: Math.round((size - logoWidth) / 2),
+      top: height - logoHeight - Math.round(size * LOGO_BOTTOM_MARGIN_RATIO),
     };
     brandMark = "logo";
   } else {
     const wordmark = await brandWordmarkOverlay({
       size,
-      pad,
+      height,
       name: input.brandName ?? "",
     });
     if (wordmark) {
@@ -1135,6 +1333,7 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
 
   const overlay = buildOverlay({
     size,
+    height,
     title: titleLayout,
     kicker: kickerBox,
     subtitle,
@@ -1143,6 +1342,7 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
     card,
     rowHeight,
     subtitleH,
+    accent: accentForTitle(title),
   });
 
   // Il marchio entra con un secondo overlay: l'SVG del testo non deve conoscerlo,
@@ -1150,29 +1350,33 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
   const overlays: OverlayOptions[] = [
     { input: Buffer.from(overlay, "utf8"), top: 0, left: 0 },
   ];
+  // Il gancio vive al centro: un overlay a sé, così la card e il titolo non
+  // devono conoscerlo e il layout resta identico con o senza testo.
+  const calloutSvg = buildCallout({ size, height, text: input.callout });
+  if (calloutSvg) overlays.push({ input: Buffer.from(calloutSvg, "utf8"), top: 0, left: 0 });
   if (brandOverlay) overlays.push(brandOverlay);
 
   const resized = await sharp(input.photo)
-    // `cover` ritaglia il lato longer: la foto del generatore non è mai
-    // garantita quadrata, e una banda bianca sarebbe peggio di un ritaglio.
-    // `withoutEnlargement` evita il upscaling di foto già più piccole del
-    // target: un ingrandimento artificiale perderebbe nitidezza senza
-    // aggiungere dettagli.
-    .resize(size, size, { fit: "cover", position: "attention", withoutEnlargement: true })
+    // `cover` ritaglia il lato longer per riempire SEMPRE l'intero fotogramma:
+    // senza questo vincolo una foto più piccola del target resterebbe centrata
+    // su uno sfondo nero (bande ai lati) e il logo/le scritte finirebbero a
+    // metà tra la foto e il bordo. Un modesto ingrandimento (le foto Pixabay
+    // verticali arrivano a ~1280px) è preferibile alle bande nere.
+    .resize(size, height, { fit: "cover", position: "attention" })
     .toBuffer();
 
   const meta = await sharp(resized).metadata();
   const resizedWidth = meta.width ?? size;
-  const resizedHeight = meta.height ?? size;
+  const resizedHeight = meta.height ?? height;
 
   // Se la foto era più piccola del target, il resize non l'ingrandisce: serve
   // un canvas di sfondo alle dimensioni corrette per poter compositare l'overlay.
   let baseImage: Buffer = resized;
-  if (resizedWidth < size || resizedHeight < size) {
+  if (resizedWidth < size || resizedHeight < height) {
     const left = Math.floor((size - resizedWidth) / 2);
-    const top = Math.floor((size - resizedHeight) / 2);
+    const top = Math.floor((height - resizedHeight) / 2);
     baseImage = await sharp({
-      create: { width: size, height: size, channels: 3, background: "#000000" },
+      create: { width: size, height: height, channels: 3, background: "#000000" },
     })
       .composite([{ input: resized, left, top }])
       // Il canvas nasce da `create`, cioè senza un formato di lettura: senza
@@ -1200,7 +1404,7 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
     mimeType: "image/jpeg",
     filename: `social-${slug || "creativita"}-${input.extraction.proposalId.slice(-6)}.jpg`,
     width: size,
-    height: size,
+    height: height,
     commercialLines: commercialRows,
     printedPoints: points.points.map((point) => point.lines.join(" ")),
     hasBrandLogo: brandMark !== null,

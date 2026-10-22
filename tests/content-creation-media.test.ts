@@ -1,4 +1,4 @@
-﻿import { test, describe, before, beforeEach, after } from "node:test";
+import { test, describe, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -215,14 +215,21 @@ describe("argomenti astratti diventano parole che si possono cercare", () => {
     }
   });
 
-  test("un argomento che è già un luogo non viene tradotto", () => {
-    // La regola che protegge dalla traduzione sbagliata: il nome di un posto è
-    // già la parola migliore da cercare.
-    assert.equal(stockQueryFrom(null, "Maldive", null), "Maldive");
-    assert.equal(stockQueryFrom("Rodi", "capitali europee", null), "Rodi", "la destinazione vince");
-    // Il topic di un luogo passa dalla tokenizzazione, che elimina gli
-    // articoli: le parole che nominano il posto restano, ed è ciò che serve
-    // alla ricerca.
+  test("una destinazione nota viene cercata col suo landmark inglese", () => {
+    // Nei provider indicizzati in inglese (Pixabay) il nome italiano (Rodi,
+    // Creta, Atene) trova risultati sbagliati: la destinazione nota viene
+    // quindi cercata col landmark più iconico in inglese, che è la parola che
+    // identifica davvero il posto.
+    assert.equal(
+      stockQueryFrom("Rodi", "capitali europee", null),
+      "rhodes old town",
+      "la destinazione è cercata col landmark inglese, non col nome italiano"
+    );
+    // Anche un luogo passato come topic (senza destinazione esplicita) viene
+    // cercato col landmark inglese: è lo stesso posto, non può cercarsi in due
+    // modi diversi a seconda di come il modello lo inoltra.
+    assert.equal(stockQueryFrom(null, "Maldive", null), "maldives beach");
+    // Un luogo non curato resta sul nome ripulito, senza traduzione inventata.
     assert.match(stockQueryFrom(null, "Isola d'Elba", null), /Isola/, "il nome del luogo resta");
   });
 
@@ -738,8 +745,9 @@ describe("createContent crea il DRAFT con il visual recuperato dallo stock", () 
     ).metadata as Record<string, unknown>;
 
     // Ogni formato dichiara che cosa promette: due post sulla stessa destinazione
-    // devono essere distinguibili dal fotogramma senza leggere la caption.
-    assert.equal(heroMeta.kicker, "La destinazione", "l'hero dichiara la sua angolazione");
+    // devono essere distinguibili dal fotogramma senza leggere la caption. L'hero
+    // è la vetrina e mostra solo il nome del luogo, senza rubrica.
+    assert.equal(heroMeta.kicker, null, "l'hero mostra solo il nome del luogo, senza rubrica");
     assert.equal(tipsMeta.kicker, "Consigli di viaggio", "il formato promette informazione e la dichiara");
     assert.equal(tips.data.kicker, "Consigli di viaggio", "il modello riceve la stessa dichiarazione");
     assert.notEqual(
@@ -778,9 +786,10 @@ describe("createContent crea il DRAFT con il visual recuperato dallo stock", () 
     assert.equal(data.stockQuery, searched.query, "la query dichiarata è quella cercata");
   });
 
-  test("6f. un argomento che è già un luogo non viene tradotto", async () => {
-    // La regola che protegge dalla traduzione sbagliata: il nome di un posto è
-    // già la parola migliore da cercare, sostituirlo perderebbe precisione.
+  test("6f. un luogo passato come topic viene cercato col landmark inglese", async () => {
+    // Anche senza "destination" esplicito, un luogo noto va cercato col suo
+    // landmark in inglese: "Maldive" da solo troverebbe immagini generiche,
+    // "maldives beach" trova la spiaggia che l'utente si aspetta.
     stock.returnImage = true;
     const { res, data } = await createTool({
       topic: "Maldive",
@@ -789,8 +798,8 @@ describe("createContent crea il DRAFT con il visual recuperato dallo stock", () 
     });
 
     assert.equal(res.ok, true, res.message);
-    assert.equal(data.stockQuery, "Maldive", "il nome del luogo passa intatto");
-    assert.equal(stock.searches[stock.searches.length - 1].query, "Maldive");
+    assert.equal(data.stockQuery, "maldives beach", "il luogo è cercato col landmark inglese");
+    assert.equal(stock.searches[stock.searches.length - 1].query, "maldives beach");
   });
 
   test("7. un provider immagini rotto o assente non cambia nulla", async () => {

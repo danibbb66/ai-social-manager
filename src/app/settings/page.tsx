@@ -4,10 +4,8 @@ import {
   hasFacebook,
   hasTiktok,
 } from "@/lib/env";
-import { checkAiStatus } from "@/lib/ai/status";
 import { Card, CardHeader, PageHeader, Badge } from "@/components/ui";
-import { AiStatusCheck } from "@/components/ai-status";
-import { Terminal, Database, Bot, Lock, Share2 } from "lucide-react";
+import { Terminal, Database, Lock, Share2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -49,43 +47,12 @@ function Row({
 }
 
 export default async function SettingsPage() {
-  const aiStatus = await checkAiStatus().catch(() => null);
-
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Impostazioni"
-        description="Configurazione del sistema: AI locale, credenziali e provider."
+        description="Configurazione del sistema: credenziali e provider."
       />
-
-      <Card className="mb-6">
-        <CardHeader
-          title={
-            <span className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-sky-500" /> Assistente AI (Ollama)
-            </span>
-          }
-          description="Stato del provider e dei modelli locali"
-        />
-        <div className="px-5 py-4">
-          <AiStatusCheck
-            initial={
-              aiStatus
-                ? {
-                    ok: aiStatus.ok,
-                    provider: aiStatus.provider,
-                    model: aiStatus.model,
-                    availableModels: aiStatus.availableModels.map((m) => ({
-                      name: m.name,
-                      size: m.size ?? 0,
-                    })),
-                    message: aiStatus.message,
-                  }
-                : null
-            }
-          />
-        </div>
-      </Card>
 
       <Card className="mb-6">
         <CardHeader
@@ -97,13 +64,6 @@ export default async function SettingsPage() {
           description="Valori letti dal file .env"
         />
         <div className="divide-y divide-slate-100 px-5 py-2">
-          <Row
-            label="AI Provider"
-            value={config.aiProvider}
-            hint="Provider per la generazione di testi"
-          />
-          <Row label="Base URL Ollama" value={config.ollamaBaseUrl} />
-          <Row label="Modello AI" value={config.ollamaModel} />
           <Row label="Image provider" value={config.imageProvider} hint="manual = solo upload" />
           <Row
             label="Video provider"

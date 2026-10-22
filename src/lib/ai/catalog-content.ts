@@ -32,9 +32,7 @@ export const CONTENT_FORMATS = [
   "HERO_DESTINATION",
   "ITINERARY",
   "TRAVEL_TIPS",
-  "STORYTELLING",
   "OFFER",
-  "INSPIRATION",
   "FAQ",
 ] as const;
 
@@ -45,10 +43,8 @@ const FORMAT_REQUIREMENTS: Record<
   ContentFormat,
   { price?: boolean; dates?: boolean; anyCommercial?: boolean }
 > = {
-  // Tre format parlano della destinazione senza toccare dati commerciali.
+  // Due format parlano della destinazione senza toccare dati commerciali.
   HERO_DESTINATION: {},
-  STORYTELLING: {},
-  INSPIRATION: {},
   TRAVEL_TIPS: {},
   // Questi descrivono un prodotto: senza dati reali racconterebbero fiction.
   ITINERARY: { dates: true },
@@ -128,6 +124,65 @@ export function pickEditorialFormat(
 }
 
 /**
+ * I format del flusso teaser: parlano del luogo, mai dell'offerta.
+ *
+ * Il flusso teaser esiste per catturare l'attenzione con i visual del posto:
+ * un format che citerebbe prezzi, date o servizi (OFFER, ITINERARY, FAQ) non
+ * gli appartiene, nemmeno quando i dati ci sarebbero. La separazione non è
+ * una preferenza stilistica: gli stessi dati non possono finire in due flussi
+ * con regole di pubblicazione diverse.
+ */
+export const TEASER_FORMATS = [
+  "HERO_DESTINATION",
+  "TRAVEL_TIPS",
+] as const;
+
+export type TeaserFormat = (typeof TEASER_FORMATS)[number];
+
+export function isTeaserFormat(format: ContentFormat): format is TeaserFormat {
+  return (TEASER_FORMATS as readonly string[]).includes(format);
+}
+
+/**
+ * Scelta del format per il flusso teaser, deterministica come
+ * `pickEditorialFormat` ma con il pool ristretto ai format senza dati
+ * commerciali: un format commerciale richiesto viene rifiutato con un
+ * warning, non usato in sordina.
+ */
+export function pickTeaserFormat(
+  dto: CatalogProposalDto,
+  requested?: ContentFormat | null
+): { format: TeaserFormat; warnings: string[] } {
+  const available = availableFormats(dto).filter(
+    (f): f is TeaserFormat => isTeaserFormat(f)
+  );
+  const warnings: string[] = [];
+  const fallback: TeaserFormat = available[0] ?? "HERO_DESTINATION";
+
+  if (requested && CONTENT_FORMATS.includes(requested)) {
+    if (isTeaserFormat(requested) && available.includes(requested)) {
+      return { format: requested, warnings };
+    }
+    const reason = isTeaserFormat(requested)
+      ? formatUnavailableReason(dto, requested)
+      : "format riservato al flusso offerta: nel teaser non si citano prezzi, date o servizi";
+    warnings.push(
+      `format ${requested} non usabile nel teaser (${reason}): scelto ${fallback}.`
+    );
+    return { format: fallback, warnings };
+  }
+  if (requested) {
+    warnings.push(`format "${requested}" sconosciuto: scelto ${fallback}.`);
+    return { format: fallback, warnings };
+  }
+
+  const pool: TeaserFormat[] = available.length > 0 ? available : ["HERO_DESTINATION"];
+  let hash = 0;
+  for (let i = 0; i < dto.id.length; i += 1) hash = (hash + dto.id.charCodeAt(i)) % pool.length;
+  return { format: pool[hash], warnings };
+}
+
+/**
  * Il luogo su cui scrivere: la destinazione, o il nome se non è stata derivata.
  *
  * Entrambi vengono ripuliti dal formato editoriale. Anche nel catalogo il
@@ -190,7 +245,7 @@ function durationLabel(dto: CatalogProposalDto): string | null {
  * (`da 890 € a 1.290 €`, `5 notti`), là dentro diventano righe di consigli,
  * tappe o risposte. Un dato assente resta `null` e la matrice non lo
  * rimpiazza: è la stessa promessa che faceva il codice precedente, applicata a
- * sette formati invece che a tre.
+ * cinque formati invece che a tre.
  */
 function factsFrom(dto: CatalogProposalDto): EditorialFacts {
   const nights = dto.commercial.durationNights;
@@ -373,8 +428,6 @@ export function buildVisualDirection(
 
   const subjectByFormat: Record<ContentFormat, string> = {
     HERO_DESTINATION: `la destinazione ${place} in primo piano`,
-    STORYTELLING: `un momento di viaggio che evoca ${place}`,
-    INSPIRATION: `l'atmosfera di ${place} senza persone in primo piano`,
     // Per i consigli il soggetto non è il luogo: è un dettaglio che si guarda,
     // non uno sfondo da contemplare. È la differenza visiva tra "Maldive" come
     // vetrina e "Maldive" come consiglio, e senza di essa la rubrica stampata

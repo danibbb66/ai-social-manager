@@ -1,4 +1,21 @@
 "use client";
+function LightboxModal({ src, onClose }: { src: string; onClose: () => void }) {
+  const isVideo = /\.(mp4|webm|mov)(\?.*)?$/i.test(src) || src.includes("video");
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="relative max-w-4xl max-h-[90vh] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute -top-10 right-0 text-white font-bold text-xl hover:text-gray-300">✕ Chiudi</button>
+        {isVideo ? (
+          <video src={src} controls autoPlay className="max-w-full max-h-[85vh] rounded-lg shadow-2xl" />
+        ) : (
+          <img src={src} alt="Preview" className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -50,6 +67,7 @@ export function ContentMediaSection({
 }) {
   const router = useRouter();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +205,7 @@ export function ContentMediaSection({
                 key={a.id}
                 className="group overflow-hidden rounded-lg border border-slate-200"
               >
-                <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
+                <div className="relative aspect-square w-full overflow-hidden bg-slate-100 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setSelectedUrl(a.url)}>
                   <MediaThumb asset={a} className="h-full w-full" />
                 </div>
                 <div className="space-y-2 bg-slate-50 p-2">
@@ -272,6 +290,7 @@ export function ContentMediaSection({
         </div>
       </div>
 
+      {selectedUrl && <LightboxModal src={selectedUrl} onClose={() => setSelectedUrl(null)} />}
       <AssetPicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}

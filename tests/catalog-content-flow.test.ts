@@ -4,25 +4,21 @@ import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import { join } from "node:path";
 import { prisma } from "../src/lib/prisma";
-import { runAgent, SYSTEM_PROMPT, type AgentStreamEvent } from "../src/lib/ai/agent";
+import { SYSTEM_PROMPT } from "../src/lib/ai/agent";
 import { setAiProvider } from "../src/lib/ai/factory";
 import { setImageProvider } from "../src/lib/images/factory";
 import { deleteUploadedFile, saveUploadedFile } from "../src/lib/uploads";
 import type { GeneratedImage, ImageProvider, ImageUpload } from "../src/lib/images/provider";
 import sharp from "sharp";
-import type {
-  AiChatMessage,
-  AiCompletion,
-  AiPingResult,
-  AiProvider,
-} from "../src/lib/ai/provider";
-import { getOrCreateConversation } from "../src/lib/services/chat";
+
 import { deleteContent } from "../src/lib/services/content";
 import {
   CATALOG_CREATIVE_ORIGIN,
   type AnyCatalogVisualMetadata,
 } from "../src/lib/services/catalog-visual";
 import { getTool } from "../src/lib/ai/tools/registry";
+import { executeCatalogContent } from "../src/lib/ai/tools/content";
+import { searchCatalogTool } from "../src/lib/ai/tools/catalog";
 import {
   searchCatalogForAi,
   selectFromProposals,
@@ -174,73 +170,10 @@ async function listUploads(): Promise<string[]> {
   return out.sort();
 }
 
-function envelope(calls: { name: string; arguments: Record<string, unknown> }[], message?: string) {
-  return JSON.stringify({
-    message: message ?? "Procedo.",
-    tool_calls: calls,
-  });
-}
 
-/** Provider finto: una risposta per round, nessuna chiamata a Ollama. */
-class ScriptedAiProvider implements AiProvider {
-  readonly name = "scripted";
-  readonly model = "scripted";
-  readonly calls: AiChatMessage[][] = [];
-
-  constructor(private readonly replies: string[]) {
-    if (replies.length === 0) throw new Error("serve almeno una risposta");
-  }
-
-  async ping(): Promise<AiPingResult> {
-    return {
-      ok: true,
-      provider: this.name,
-      model: this.model,
-      availableModels: [],
-      message: "scripted",
-    };
-  }
-
-  async chat(messages: AiChatMessage[]): Promise<AiCompletion> {
-    this.calls.push(messages);
-    const i = Math.min(this.calls.length - 1, this.replies.length - 1);
-    return { text: this.replies[i] };
-  }
-}
-
-type ToolEvent = Extract<AgentStreamEvent, { type: "tool" }>;
-
-async function runScripted(userMessage: string, replies: string[]) {
-  const conversation = await getOrCreateConversation(null, "[TEST] catalogo→AI");
-  conversationIds.push(conversation.id);
-  setAiProvider(new ScriptedAiProvider(replies));
-
-  const events: AgentStreamEvent[] = [];
-  await runAgent({
-    conversationId: conversation.id,
-    userMessage,
-    emit: (e) => events.push(e),
-  });
-
-  return {
-    toolEvents: events.filter((e): e is ToolEvent => e.type === "tool"),
-    finalEvents: events.filter((e) => e.type === "final"),
-  };
-}
-
-/** Chiamata diretta a un tool, senza passare dal modello. */
-async function callTool(name: string, args: Record<string, unknown>) {
-  const tool = getTool(name);
-  assert.ok(tool, `il tool ${name} deve esistere`);
-  const result = await tool.execute(args);
-  return result as { ok: boolean; message: string; data?: Record<string, unknown> };
-}
-
-const createContentTool = () => {
-  const tool = getTool("createContent");
-  assert.ok(tool, "createContent deve esistere");
-  return tool;
-};
+const createContentTool = () => ({
+  execute: (args: Record<string, unknown>) => executeCatalogContent(args),
+});
 
 /** Conta i DRAFT e ripulisce quelli creati dal test. */
 async function draftCount(): Promise<number> {
@@ -465,7 +398,7 @@ test("3. una destinazione assente dal Catalogo non produce nessun DRAFT", async 
     "il catalogo di test non deve contenere la destinazione cercata"
   );
 
-  const search = await callTool("searchCatalog", { query: ABSENT_DESTINATION });
+  const search = await searchCatalogTool.execute({ query: ABSENT_DESTINATION });
   assert.equal(search.ok, false, "la ricerca deve dichiarare l'assenza");
   assert.match(search.message, /Nessuna proposta del Catalogo/);
   assert.match(
@@ -641,7 +574,7 @@ test("6. una proposta senza dati commerciali non può usare OFFER, ITINERARY o F
   for (const forbidden of ["OFFER", "ITINERARY", "FAQ"] as ContentFormat[]) {
     assert.equal(available.includes(forbidden), false, `${forbidden} non deve essere disponibile`);
   }
-  for (const allowed of ["HERO_DESTINATION", "STORYTELLING", "INSPIRATION", "TRAVEL_TIPS"]) {
+  for (const allowed of ["HERO_DESTINATION", "TRAVEL_TIPS"]) {
     assert.ok(available.includes(allowed as ContentFormat), `${allowed} deve restare disponibile`);
   }
 
@@ -979,25 +912,26 @@ test("7f. il prompt è deterministico e la funzione è pura", () => {
 test("8. una richiesta generica seleziona una proposta ACTIVE reale", async () => {
   const before = await draftCount();
 
-  const { toolEvents } = await runScripted("Crea un post Instagram/Facebook", [
-    envelope([{ name: "createContent", arguments: { fromCatalog: true, platforms: ["INSTAGRAM"] } }]),
-  ]);
+  // Il flusso catalogo è separato dalla chat: qui si chiama direttamente
+  // l'entry-point del catalogo (executeCatalogContent), non il tool della chat.
+  const result = await createContentTool().execute({
+    fromCatalog: true,
+    platforms: ["INSTAGRAM"],
+  }) as { ok: boolean; message: string; data?: Record<string, unknown> };
 
-  const create = toolEvents.find((e) => e.name === "createContent");
-  assert.ok(create, "createContent deve essere stato chiamato");
-  assert.equal(create.ok, true, create.error ?? "");
+  assert.equal(result.ok, true, result.message);
 
-  const id = await prisma.content.findFirst({
+  const row = await prisma.content.findFirst({
     where: { catalogProposalId: { not: null } },
     orderBy: { createdAt: "desc" },
     select: { id: true, catalogProposalId: true },
   });
-  assert.ok(id, "deve esistere un DRAFT ancorato a una proposta");
-  contentIds.push(id.id);
+  assert.ok(row, "deve esistere un DRAFT ancorato a una proposta");
+  contentIds.push(row.id);
   assert.equal(await draftCount(), before + 1, "un solo DRAFT");
 
   const proposal = await prisma.catalogProposal.findUnique({
-    where: { id: id.catalogProposalId! },
+    where: { id: row.catalogProposalId! },
   });
   assert.ok(proposal, "la proposta selezionata deve esistere");
   assert.equal(proposal.status, "ACTIVE", "solo proposte ACTIVE");
@@ -1046,31 +980,31 @@ test("8b. la selezione è deterministica e preferisce le proposte non ancora usa
  * 9. una richiesta = un solo DRAFT
  * ------------------------------------------------------------------ */
 
-test("9. una seconda createContent nello stesso turno resta bloccata", async () => {
+test("9. due richieste per la stessa destinazione producono un solo DRAFT", async () => {
   const before = await draftCount();
   const beforeForProposal = await prisma.content.count({ where: { catalogProposalId: bareId } });
 
-  const { toolEvents } = await runScripted("Crea un post per Testonia", [
-    envelope([
-      {
-        name: "createContent",
-        arguments: { fromCatalog: true, destination: BARE_DESTINATION, platforms: ["INSTAGRAM"] },
-      },
-      {
-        name: "createContent",
-        arguments: { fromCatalog: true, destination: BARE_DESTINATION, platforms: ["FACEBOOK"] },
-      },
-    ]),
-  ]);
+  // Il guard "già stato creato in questo turno" era a livello agente e non è
+  // più raggiungibile dal flusso catalogo, che è separato dalla chat. Qui si
+  // verifica l'idempotenza del servizio catalogo: ripetere la stessa
+  // destinazione restituisce il DRAFT già esistente senza duplicarlo.
+  const first = await createContentTool().execute({
+    fromCatalog: true,
+    destination: BARE_DESTINATION,
+    platforms: ["INSTAGRAM"],
+  }) as { ok: boolean; message: string; data?: Record<string, unknown> };
+  const second = await createContentTool().execute({
+    fromCatalog: true,
+    destination: BARE_DESTINATION,
+    platforms: ["FACEBOOK"],
+  }) as { ok: boolean; message: string; data?: Record<string, unknown> };
 
-  const creates = toolEvents.filter((e) => e.name === "createContent");
-  assert.equal(creates.length, 2, "entrambe le chiamate restano visibili");
-  assert.equal(creates[0].ok, true, creates[0].error ?? "");
-  assert.equal(creates[1].ok, false, "la seconda non viene eseguita");
-  assert.match(String(creates[1].error ?? ""), /già stato creato in questo turno/);
+  assert.equal(first.ok, true, first.message);
+  assert.equal(second.ok, true, second.message);
 
-  // Nessun DRAFT in più: il guard ferma la seconda chiamata e la prima, sulla
-  // stessa proposta, riusa il visuale già materializzato invece di duplicarlo.
+  // Nessun DRAFT in più: la stessa proposta resta con un solo DRAFT. Risolto
+  // per destinazione il riuso non è una ripetizione idempotente (reused resta
+  // false), ma il contenuto preesistente viene restituito invece di duplicarlo.
   assert.equal(await draftCount(), before, "nessun DRAFT nuovo");
   assert.equal(
     await prisma.content.count({ where: { catalogProposalId: bareId } }),
@@ -1235,20 +1169,15 @@ test("10b. con il solo placeholder il catalogo non è promuovibile", async () =>
  * Contratto del tool e del prompt
  * ------------------------------------------------------------------ */
 
-test("il tool di ricerca è registrato, dichiarato e read-only", async () => {
-  const tool = getTool("searchCatalog");
-  assert.ok(tool, "searchCatalog deve essere nel registry");
-  assert.match(tool.description, /Catalogo Agenzia/);
-  // La ricerca non è più un prerequisito della creazione né un divieto:
-  // è una lettura opzionale che non blocca la chat.
-  assert.match(tool.description, /lettura opzionale e mai bloccante/);
-  assert.doesNotMatch(tool.description, /PRIMA di createContent/);
-  assert.doesNotMatch(tool.description, /NON devi creare il DRAFT/);
+test("searchCatalog non è più un tool della chat: resta solo il servizio interno al catalogo", async () => {
+  // La chat non espone la ricerca del catalogo: il flusso catalogo è separato
+  // e gestito altrove (calendario/regenerazione locandine), mai dalla chat.
+  assert.equal(getTool("searchCatalog"), undefined, "searchCatalog NON deve essere nel registry della chat");
 
-  // sola lettura: nessuna scrittura, quindi nessun DRAFT
+  // Resta un servizio read-only: nessuna scrittura, quindi nessun DRAFT.
   const before = await draftCount();
-  await callTool("searchCatalog", { query: BARE_DESTINATION });
-  await callTool("searchCatalog", {});
+  await searchCatalogTool.execute({ query: BARE_DESTINATION });
+  await searchCatalogTool.execute({});
   assert.equal(await draftCount(), before);
 
   // il DTO non contiene HTML grezzo
@@ -1272,71 +1201,37 @@ test("il prompt non mette più il Catalogo come vincolo alla chat", () => {
   // La regola opposta: qualsiasi destinazione produce comunque i contenuti.
   assert.match(SYSTEM_PROMPT, /Qualsiasi destinazione o argomento è ammesso/);
   assert.match(SYSTEM_PROMPT, /crea SEMPRE i contenuti richiesti/);
-  assert.match(SYSTEM_PROMPT, /Nessun controllo di catalogo blocca la creazione/);
+  assert.match(SYSTEM_PROMPT, /Nessun controllo blocca la creazione/);
 });
 
-test("il contratto di createContent descrive il visuale come parte del DRAFT di catalogo", () => {
+test("il contratto di createContent è catalog-free: la chat crea solo post e video", () => {
   const tool = getTool("createContent");
   assert.ok(tool, "createContent deve essere nel registry");
 
-  // Nessun prerequisito di catalogo: la creazione parte dal topic richiesto,
-  // l'ancoraggio a una proposta è un'opzione esplicita dell'utente.
-  assert.match(tool.description, /senza verificare l'esistenza della destinazione nel Catalogo/);
-  assert.doesNotMatch(tool.description, /cerca prima con searchCatalog/);
-  assert.doesNotMatch(tool.description, /NON crea nulla e non devi inventare/);
-  assert.match(tool.description, /"fromCatalog": true/);
-  assert.match(tool.description, /catalogProposalId/);
+  // La chat non conosce il catalogo: nessun campo né descrizione lo richiama.
+  assert.doesNotMatch(tool.description, /fromCatalog/);
+  assert.doesNotMatch(tool.description, /catalogProposalId/);
+  assert.doesNotMatch(tool.description, /searchCatalog/);
+  assert.doesNotMatch(tool.description, /locandina del catalogo/);
 
-  // La promessa del visuale, nelle sue parti: DRAFT completo, visuale che è
-  // una creatività dell'agenzia e non la locandina del fornitore, e nessun
-  // DRAFT a metà in caso di errore.
-  assert.match(tool.description, /DRAFT nasce COMPLETO, visuale incluso/);
-  assert.match(tool.description, /Il visuale è SEMPRE una vostra creatività e non la locandina del catalogo/);
-  assert.match(tool.description, /fotografia ad alta risoluzione generata sul tema della destinazione/);
-  assert.match(tool.description, /template grafico dell'agenzia/);
-  assert.match(tool.description, /vostro logo \(o il wordmark con il nome dell'agenzia\)/);
-  assert.match(tool.description, /La locandina del fornitore non viene usata come immagine né allegata al post/);
-  assert.match(tool.description, /Se il visuale non può essere composto non viene creato alcun DRAFT/);
-  assert.match(tool.description, /ok:false con il motivo/);
-  // La formulazione vecchia prometteva che la locandina sarebbe stata usata
-  // come visuale: è esattamente il comportamento da non avere più.
-  assert.doesNotMatch(tool.description, /immagine ufficiale valida viene scaricata e usata/);
-
-  // `withMedia` non è un interruttore: resta per compatibilità e non viene
-  // presentato come il modo per ottenere un'immagine.
-  assert.match(tool.description, /"withMedia" è un parametro legacy\/compatibilità/);
-  assert.doesNotMatch(
-    tool.description,
-    /questo tool non genera immagini AI/,
-    "la frase descriveva il tool intero: era falso per il flusso catalogo"
-  );
-
-  // Il ramo senza catalogo mantiene il suo significato: la libreria stock è
-  // la prima fonte, e la generazione è il ripiego quando la libreria è vuota.
-  assert.match(tool.description, /SENZA catalogo \(solo "topic"\): il visual viene SEMPRE recuperato/);
+  // Il visuale resta parte del DRAFT, senza alcun riferimento al catalogo.
+  assert.match(tool.description, /il DRAFT nasce sempre con il suo visual/);
   assert.match(tool.description, /il visual viene GENERATO con il provider immagini/);
-  assert.match(
-    tool.description,
-    /il tool ti dice esplicitamente che l'immagine è generata e non reale/
-  );
+  assert.match(tool.description, /nessun post deve restare senza visual/);
+  assert.match(tool.description, /ok:false con il motivo/);
 
-  // Le stesse promesse devono arrivare allo stesso modello che legge gli
-  // argomenti, non solo nella description del tool.
-  const schema = (tool.schema as unknown as { shape: Record<string, { description?: string }> }).shape;
-  assert.match(
-    schema.fromCatalog.description ?? "",
-    /il DRAFT viene creato con il visuale già a terra/,
-    "fromCatalog deve dichiarare il visuale, non solo il testo"
-  );
-  assert.match(schema.fromCatalog.description ?? "", /non viene creato alcun DRAFT/);
-  assert.match(schema.destination.description ?? "", /nasce anche con il visuale/);
-  assert.match(schema.withMedia.description ?? "", /Legacy\/compatibilità: non usato/);
-  assert.match(schema.withMedia.description ?? "", /Non controlla il visuale del flusso catalogo/);
-  assert.doesNotMatch(
-    schema.withMedia.description ?? "",
-    /non genera immagini AI/,
-    "withMedia non deve più attribuirsi la responsabilità del visuale"
-  );
+  // Il testo "gancio" fornito dall'utente è descritto.
+  assert.match(tool.description, /"callout"/);
+
+  // Lo schema della chat NON espone i campi che attivano il catalogo.
+  const schema = (tool.schema as unknown as { shape: Record<string, unknown> }).shape;
+  assert.equal(schema.fromCatalog, undefined);
+  assert.equal(schema.catalogProposalId, undefined);
+  assert.equal(schema.flow, undefined);
+  assert.equal(schema.withMedia, undefined);
+  assert.ok(schema.callout, "callout deve esistere nello schema della chat");
+  assert.ok(schema.topic, "topic deve esistere nello schema della chat");
+  assert.ok(schema.destination, "destination deve esistere nello schema della chat");
 });
 
 test("il confronto testuale del catalogo ignora maiuscole e accenti", () => {

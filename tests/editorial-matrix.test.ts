@@ -24,7 +24,7 @@ import {
 import type { CatalogProposalDto } from "../src/lib/services/catalog-ai";
 
 /**
- * Matrice editoriale: sette formati, due output ciascuno.
+ * Matrice editoriale: cinque formati, due output ciascuno.
  *
  * Qui la verifica è sulla struttura, non sul testo preciso: ciò che deve
  * valere per tutti i formati è che il titolo nomini la destinazione e non
@@ -242,7 +242,7 @@ test("PARSING: la conoscenza viene trovata dopo la pulizia", () => {
 test("ITINERARI SMART: il mare gira attorno alle spiagge e ai tramonti", () => {
   // Un itinerario d'isola fatto di quartieri e monumenti non sta in piedi: chi
   // va a Ibiza cerca una cala, non un quartiere. E viceversa.
-  for (const place of ["Formentera", "Mallorca", "Ibiza", "Creta", "Elba"]) {
+  for (const place of ["Formentera", "Mallorca", "Ibiza", "Creta"]) {
     const caption = editorialCaption("ITINERARY", place);
     assert.match(
       caption,
@@ -266,7 +266,7 @@ test("ITINERARI SMART: sull'isola ogni giornata finisce in acqua", () => {
   // Le isole: qui la promessa della cornice è "spiagge, cale, tramonti", e ogni
   // giornata deve potercela mantenere. Sono le destinazioni dove il mare è la
   // ragione del viaggio.
-  for (const place of ["Formentera", "Mallorca", "Ibiza", "Creta", "Rodi", "Corfù", "Elba"]) {
+  for (const place of ["Formentera", "Mallorca", "Ibiza", "Creta", "Rodi", "Corfù"]) {
     const stops = editorialPoints("ITINERARY", place);
     assert.equal(stops.length, 3, `${place}: tre giornate`);
     for (const stop of stops) {
@@ -585,16 +585,7 @@ test("MATRICE: HERO_DESTINATION è il luogo con i suoi dati", () => {
   assert.match(copy.caption, /890/, "i dati ci sono, in caption");
 });
 
-test("MATRICE: INSPIRATION e STORYTELLING sono titoli d'atmosfera sul luogo", () => {
-  for (const format of ["INSPIRATION", "STORYTELLING"] as const) {
-    const copy = catalogCopyFromProposal(proposalWith(), format);
-    assert.ok(titleNamesPlace(copy.title, PLACE), `${format}: ${copy.title}`);
-    assert.ok(copy.caption.length > copy.title.length, `${format}: la caption sviluppa`);
-    assert.match(copy.caption, /Formentera/, `${format}: la copia parla del luogo`);
-  }
-});
-
-test("MATRICE: le sette caption sono tutte diverse fra loro", () => {
+test("MATRICE: le caption dei formati sono tutte diverse fra loro", () => {
   const captions = CONTENT_FORMATS.map((f) => editorialCaption(f, PLACE));
   assert.equal(
     new Set(captions).size,
@@ -637,14 +628,22 @@ test("MATRICE: nessun formato nomina una destinazione che non è richiesta", () 
   }
 });
 
-test("MATRICE: tutti e sette i formati hanno una rubrica dichiarata", () => {
+test("MATRICE: ogni formato ha la sua rubrica, tranne l'hero", () => {
   // La rubrica è ciò che distingue due post sulla stessa destinazione prima che
-  // il lettore legga una parola: senza, il fotogramma è identico.
+  // il lettore legga una parola: senza, il fotogramma è identico. L'hero è
+  // l'eccezione: è la vetrina del luogo e mostra solo il suo nome, senza
+  // etichetta sopra.
   for (const format of CONTENT_FORMATS) {
+    if (format === "HERO_DESTINATION") {
+      assert.equal(kickerForFormat(format), null, "l'hero non deve avere una rubrica");
+      continue;
+    }
     const kicker = kickerForFormat(format);
     assert.ok(kicker && kicker.trim().length > 0, `${format}: manca la rubrica`);
   }
-  const rubriche = CONTENT_FORMATS.map((f) => kickerForFormat(f));
+  const rubriche = CONTENT_FORMATS.filter((f) => f !== "HERO_DESTINATION").map((f) =>
+    kickerForFormat(f)
+  );
   assert.equal(new Set(rubriche).size, rubriche.length, "due formati non possono avere la stessa rubrica");
 });
 

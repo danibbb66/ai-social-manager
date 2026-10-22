@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, UploadCloud } from "lucide-react";
 import { Button, Input, Textarea, Field } from "@/components/ui";
 import { saveBrandAction } from "@/lib/actions/brand";
 
@@ -84,6 +84,38 @@ export function BrandForm({ brand }: { brand: Brand | null }) {
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
 
+  // Upload del logo: il file viene salvato in /uploads e il percorso tornato
+  // finisce nel campo `logoUrl`. Il campo accetta SOLO un percorso /uploads/…
+  // (mai un percorso del PC né un URL remoto), quindi qui l'utente non deve
+  // sapere nulla di cartelle: carica e basta.
+  const logoFileRef = useRef<HTMLInputElement>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  const uploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = ""; // reset: riselezionare lo stesso file riemette l'evento
+    if (!file) return;
+    setSaveError(null);
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        setSaveError(body?.message ?? "Upload del logo non riuscito.");
+        return;
+      }
+      const url = body?.assets?.[0]?.url as string | undefined;
+      if (url) setForm((f) => ({ ...f, logoUrl: url }));
+      else setSaveError("Upload riuscito ma senza percorso: riprova.");
+    } catch {
+      setSaveError("Upload del logo non riuscito. Riprova.");
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   const save = () =>
     startTransition(async () => {
       setSaveError(null);
@@ -151,8 +183,35 @@ export function BrandForm({ brand }: { brand: Brand | null }) {
         <Field label="TikTok">
           <Input value={form.tiktok} onChange={set("tiktok")} placeholder="@handle" />
         </Field>
-        <Field label="Logo (URL)">
-          <Input value={form.logoUrl} onChange={set("logoUrl")} placeholder="/uploads/…" />
+        <Field label="Logo" hint="Carica il file, oppure incolla un percorso /uploads/…">
+          <div className="flex items-center gap-2">
+            <Input
+              value={form.logoUrl}
+              onChange={set("logoUrl")}
+              placeholder="/uploads/images/…"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => logoFileRef.current?.click()}
+              disabled={uploadingLogo}
+              aria-busy={uploadingLogo}
+            >
+              {uploadingLogo ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <UploadCloud className="h-4 w-4" />
+              )}
+              {uploadingLogo ? "Caricamento…" : "Carica"}
+            </Button>
+          </div>
+          <input
+            ref={logoFileRef}
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={uploadLogo}
+          />
         </Field>
       </div>
 

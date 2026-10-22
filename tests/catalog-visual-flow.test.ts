@@ -1290,7 +1290,7 @@ describe("generazione del visuale senza originale", () => {
   test("22. una direzione diversa è un visuale diverso, quindi una nuova generazione", async () => {
     const dto = await loadProposalWithoutImage();
     const first = generationDirectionFor(dto, "HERO_DESTINATION");
-    const second = generationDirectionFor(dto, "STORYTELLING");
+    const second = generationDirectionFor(dto, "TRAVEL_TIPS");
     assert.notEqual(
       offerPhotoPrompt(photoDirectionFrom(first)),
       offerPhotoPrompt(photoDirectionFrom(second)),

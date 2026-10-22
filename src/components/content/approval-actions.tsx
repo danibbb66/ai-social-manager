@@ -42,10 +42,16 @@ export function useApprovalActions() {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  const approve = (contentId: string, note?: string, onDone?: () => void) =>
+  const approve = (
+    contentId: string,
+    note?: string,
+    onDone?: () => void,
+    beforeApprove?: () => Promise<boolean>
+  ) =>
     startTransition(async () => {
       setError(null);
       try {
+        if (beforeApprove && !(await beforeApprove())) return;
         const res: ActionResult = await approveAction(contentId, note);
         if (res && res.ok === false) {
           setError(res.message ?? "Approvazione non riuscita.");
@@ -197,6 +203,7 @@ export function ApprovalActions({
   className,
   onApproved,
   onRejected,
+  beforeApprove,
 }: {
   contentId: string;
   /** Blocca le azioni quando il contenuto non è in DRAFT o manca la caption. */
@@ -207,11 +214,13 @@ export function ApprovalActions({
   className?: string;
   onApproved?: () => void;
   onRejected?: (note?: string) => void;
+  /** Salvata prima di approvare; se ritorna false l'approvazione viene annullata. */
+  beforeApprove?: () => Promise<boolean>;
 }) {
   const { approve, reject, pending, error } = useApprovalActions();
   const [askReject, setAskReject] = useState(false);
 
-  const doApprove = () => approve(contentId, undefined, onApproved);
+  const doApprove = () => approve(contentId, undefined, onApproved, beforeApprove);
 
   const doReject = (note?: string) =>
     reject(contentId, note, () => {

@@ -3,11 +3,44 @@ export type SocialCredentials = {
   extra: Record<string, string>;
 };
 
+/**
+ * Timeout di inattività minimo per le chiamate Ollama (ms).
+ *
+ * I modelli locali da 8B (qwen3:8b) possono impiegare decine di secondi prima
+ * del primo token: caricamento del modello in memoria, valutazione del prompt.
+ * Un valore sotto questo tetto produce timeout spuri che sembrano guasti del
+ * servizio, quindi non è ammesso nemmeno impostandolo a mano.
+ */
+export const OLLAMA_MIN_TIMEOUT_MS = 60_000;
+
+/**
+ * Timeout di inattività: la richiesta viene abortita se Ollama non produce
+ * nulla per questo tempo. Non è un tetto sulla durata totale: una generazione
+ * lunga ma viva (i token continuano ad arrivare) prosegue finché lo stream
+ * alimenta il watchdog, fino al tetto totale.
+ */
+const OLLAMA_IDLE_TIMEOUT_MS = Math.max(
+  Number(process.env.OLLAMA_TIMEOUT_MS ?? 600_000) || 600_000,
+  OLLAMA_MIN_TIMEOUT_MS
+);
+
+/**
+ * Tetto totale della richiesta, indipendente dall'attività: nessuna chiamata
+ * può restare appesa per sempre nemmeno se Ollama continua a mandare byte.
+ */
+const OLLAMA_TOTAL_TIMEOUT_MS = Math.max(
+  Number(process.env.OLLAMA_TOTAL_TIMEOUT_MS ?? 1_800_000) || 1_800_000,
+  OLLAMA_IDLE_TIMEOUT_MS
+);
+
 export const config = {
   aiProvider: process.env.AI_PROVIDER ?? "ollama",
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434",
   ollamaModel: process.env.OLLAMA_MODEL ?? "qwen3:8b",
-  ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 600_000) || 600_000,
+  /** Timeout di inattività (ms), con il minimo di 60s imposto. */
+  ollamaTimeoutMs: OLLAMA_IDLE_TIMEOUT_MS,
+  /** Tetto totale della richiesta (ms), sempre ≥ del timeout di inattività. */
+  ollamaTotalTimeoutMs: OLLAMA_TOTAL_TIMEOUT_MS,
   /**
    * Context window del modello (token), inviato a ogni richiesta come
    * `options.num_ctx`. Il default di Ollama è 4096, troppo stretto per il
@@ -27,6 +60,14 @@ export const config = {
   ollamaNumPredict: Number(process.env.OLLAMA_NUM_PREDICT ?? 900) || 900,
   imageProvider: process.env.IMAGE_PROVIDER ?? "manual",
   videoProvider: process.env.VIDEO_PROVIDER ?? "ffmpeg",
+  /**
+   * "Solo media curati": se true, post e video usano ESCLUSIVAMENTE i file
+   * selezionati a mano dall'utente in public/curated/{photos,videos}/<slug>/.
+   * Pixabay, Pexels e Magnific non vengono MAI interrogati. Una destinazione
+   * senza file curati non produce il media (fallimento pulito, non fallback),
+   * così siamo sicuri che esca solo materiale approvato.
+   */
+  curatedMediaOnly: (process.env.CURATED_MEDIA_ONLY ?? "false") === "true",
 
   instagram: {
     token: process.env.INSTAGRAM_ACCESS_TOKEN,

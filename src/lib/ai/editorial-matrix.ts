@@ -1,10 +1,10 @@
 /**
- * Matrice editoriale: che cosa scrive e che cosa stampa ciascuno dei sette
+ * Matrice editoriale: che cosa scrive e che cosa stampa ciascuno dei cinque
  * formati, a partire dagli stessi dati.
  *
  * ## Perché esiste
  *
- * I sette formati non erano sette pezzi di copy: erano sette nomi. Il titolo
+ * I cinque formati non erano cinque pezzi di copy: erano cinque nomi. Il titolo
  * era quasi sempre il nome del luogo, la caption era una frase sola e le
  * differenze tra "un consiglio", "un itinerario" e "una domanda frequentissima"
  * sparivano in un unico blocco di prosa. Un post di consigli e un hero sullo
@@ -28,7 +28,7 @@
  * Un fatto entra nel testo solo se è in `EditorialFacts`. Nessun formato stima un
  * prezzo, una data o una durata che non ci sono: dove il dato manca, la copy
  * dice che il dato va chiesto in agenzia. È la stessa garanzia che il catalogo
- * si dava prima, applicata a tutti e sette i formati invece che a tre.
+ * si dava prima, applicata a tutti e cinque i formati invece che a tre.
  *
  * Nessuna chiamata al modello: sono funzioni pure su un insieme di dati già
  * arricchito, quindi lo stesso formato sulla stessa proposta dà sempre lo stesso
@@ -206,10 +206,6 @@ export function editorialTitle(
       // Il titolo è la domanda: è ciò che il lettore sta cercando, e lo rende
       // anche sul fotogramma, dove è la parte più grande.
       return faqQuestion(place, facts);
-    case "INSPIRATION":
-      return `Il richiamo di ${place}`;
-    case "STORYTELLING":
-      return `Il viaggio che comincia a ${place}`;
     case "OFFER":
       return facts.price
         ? `${place} · ${facts.price}${facts.dates ? ` · ${facts.dates}` : ""}`
@@ -436,8 +432,7 @@ function factSentence(facts: EditorialFacts): string {
  *
  * La struttura cambia con il formato ed è il punto: tre consigli per
  * TRAVEL_TIPS, tappe per ITINERARY, domanda e risposta per FAQ, dati in
- * evidenza per OFFER e HERO, racconto per STORYTELLING, atmosfera per
- * INSPIRATION.
+ * evidenza per OFFER e HERO.
  *
  * Il contenuto viene dalla conoscenza del luogo quando c'è, e dai dati del
  * catalogo quando non c'è. Non esiste un ramo che ammette di non sapere: ogni
@@ -516,22 +511,6 @@ function captionBody(
       }
       return `${body.join(" ")} ${CTA}`;
     }
-    case "INSPIRATION":
-      return (
-        (knowledge?.hooks?.[0]
-          ? `${knowledge.hooks[0]} ${place} si racconta meglio a chi ci va una volta, e riparte. `
-          : `A volte basta pensare a ${place} perché il desiderio di partire torna, con più chiarezza di prima. `) +
-        `${summary ? `Quello che abbiamo in serbo per questa stagione: ${summary} ` : ""}` +
-        CTA
-      );
-    case "STORYTELLING":
-      return (
-        (knowledge?.hooks?.[1] ?? knowledge?.hooks?.[0]
-          ? `${knowledge.hooks[1] ?? knowledge.hooks[0]} `
-          : `Tutto comincia da una scelta: ${place}. Una domanda all'inizio, un progetto con un nome e una data davanti, e poi la partenza. `) +
-        `${summary ? `Questa è l'offerta che lo rende possibile: ${summary} ` : ""}` +
-        CTA
-      );
     // L'offerta mette in fila tutti i dati che la decidono: prezzo, date,
     // durata, da dove si parte, cosa è incluso e cosa no. È il formato in cui
     // l'informazione è il prodotto, quindi nessun dato reale resta fuori.

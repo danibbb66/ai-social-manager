@@ -1,9 +1,8 @@
 import { Brand, Prisma } from "@prisma/client";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { sniffMediaMime } from "@/lib/uploads";
+import { readFileBuffer } from "@/lib/storage";
 
 export interface BrandInput {
   name?: string;
@@ -36,9 +35,20 @@ export async function getBrandOrCreate(): Promise<Brand> {
   });
 }
 
+/**
+ * Normalizza un campo nullable per l'update Prisma con la semantica corretta:
+ *  - `undefined`  → non toccare il campo (non viene incluso nell'update);
+ *  - `null`       → azzerare il campo a NULL nel database;
+ *  - valore reale → scrivere il valore.
+ *
+ * Prima questa funzione restituiva `undefined` per QUALSIASI valore reale,
+ * quindi i campi nullable (logoUrl, description, website, …) non venivano
+ * mai salvati.
+ */
 function setNull(v: unknown): string | null | undefined {
-  if (v === null || v === undefined) return v === null ? null : undefined;
-  return undefined;
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  return String(v);
 }
 
 export async function updateBrand(input: BrandInput): Promise<Brand> {
@@ -78,6 +88,10 @@ export async function updateBrand(input: BrandInput): Promise<Brand> {
     where: { id: brand.id },
     data,
   });
+
+  // Il marchio cambia: invalida la cache di `getBrandMark` così post e video
+  // leggono subito il nuovo logo caricato, senza riavviare il server.
+  resetBrandLogoCache();
 
   await logAudit("BRAND_UPDATED", "Brand", updated.id, {
     fields: Object.keys(data),
@@ -128,20 +142,15 @@ export async function getBrandMark(): Promise<BrandMark | null> {
     const brand = await getBrand();
     const logoUrl = brand?.logoUrl?.trim();
     if (logoUrl) {
-      // Solo file già in Media Library: il logo non viene scaricato dalla rete
-      // durante la composizione di un post.
-      const match = logoUrl.match(/^\/uploads\/([a-z]+)\/([^/]+)$/);
-      if (match) {
-        const buffer = await readFile(
-          path.join(process.cwd(), "public", "uploads", match[1], match[2])
-        ).catch(() => null);
-        if (buffer && buffer.length > 0) {
-          resolved = {
-            kind: "logo",
-            buffer,
-            mimeType: sniffMediaMime(buffer) ?? "image/png",
-          };
-        }
+      // Solo file già nello storage (Media Library): il logo non viene
+      // scaricato dalla rete durante la composizione di un post.
+      const buffer = await readFileBuffer(logoUrl).catch(() => null);
+      if (buffer && buffer.length > 0) {
+        resolved = {
+          kind: "logo",
+          buffer,
+          mimeType: sniffMediaMime(buffer) ?? "image/png",
+        };
       }
     }
     // Il logo file non c'è o non è leggibile: il wordmark è il marchio, non un

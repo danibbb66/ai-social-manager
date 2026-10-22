@@ -420,12 +420,9 @@ export function ReviewDeck({
       <div className="mx-auto max-w-2xl">
         <EmptyState
           title="Nessun contenuto da approvare"
-          description="Quando l'Assistente AI o tu create un contenuto, la bozza resta in attesa qui finché non la approvi o la scarti."
+          description="Quando crei un contenuto, la bozza resta in attesa qui finché non la approvi o la scarti."
           action={
             <div className="flex flex-wrap justify-center gap-2">
-              <LinkButton href="/chat" size="sm">
-                Crea con l&apos;AI
-              </LinkButton>
               <LinkButton href={allHref} variant="secondary" size="sm">
                 Tutti i contenuti
               </LinkButton>

@@ -23,7 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { syncOfferteCatalog } from "@/lib/services/catalog";
 import { promotable, selectCatalogProposalForAi } from "@/lib/services/catalog-ai";
 import { createFlyerSocialDraft } from "@/lib/services/flyer-social";
-import { createContentTool } from "@/lib/ai/tools/content";
+import { executeCatalogContent } from "@/lib/ai/tools/content";
 
 export const EDITORIAL_KIND_FLYER = "FLYER_SOCIAL" as const;
 export const EDITORIAL_KIND_CATALOG = "CATALOG_CONTENT" as const;
@@ -112,7 +112,7 @@ export async function runDailyEditorial(options: { date?: Date } = {}): Promise<
     // 2b. Giorno normale: `createContent` con `fromCatalog: true`. La proposta
     //     è scelta e verificata dal flusso catalogo (una ACTIVE reale, niente
     //     invenzioni); il DRAFT nasce con il visuale già a terra.
-    const result = await createContentTool.execute({ fromCatalog: true, platforms: ["INSTAGRAM"] });
+    const result = await executeCatalogContent({ fromCatalog: true, platforms: ["INSTAGRAM"] });
     if (!result.ok) throw new Error(result.message);
     const data = result.data as { id?: string | null; catalogProposalId?: string | null } | undefined;
     const contentId = data?.id ?? null;

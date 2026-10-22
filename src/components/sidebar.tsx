@@ -6,13 +6,13 @@ import {
   LayoutDashboard,
   FileText,
   CalendarDays,
-  Bot,
   Image as ImageIcon,
   Palette,
   Share2,
   Settings,
   Plane,
   BookOpen,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,9 +24,8 @@ type NavItem = { href: string; label: string; icon: typeof FileText; hub?: boole
  */
 const PRIMARY_NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/contents", label: "Contenuti", icon: FileText, hub: true },
-  { href: "/calendar", label: "Calendario", icon: CalendarDays },
-  { href: "/chat", label: "Assistente AI", icon: Bot },
+  { href: "/generate", label: "Crea video & post", icon: Sparkles, hub: true },
+  { href: "/planning", label: "Pianificazione", icon: CalendarDays, hub: true },
 ];
 
 /**

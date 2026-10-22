@@ -324,14 +324,11 @@ export default async function ContentsPage({
           description={
             q
               ? "Nessun risultato per la ricerca corrente."
-              : "Crea il primo contenuto con il pulsante qui sopra o con l'assistente AI."
+              : "Crea il primo contenuto con il pulsante qui sopra."
           }
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <NewContentButton label="Crea il primo contenuto" />
-              <LinkButton href="/chat" variant="secondary" size="sm">
-                Chiedi all&apos;AI
-              </LinkButton>
             </div>
           }
         />

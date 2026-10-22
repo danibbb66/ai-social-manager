@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { canTransition } from "@/lib/status";
 import { logAudit } from "@/lib/audit";
 import { deleteUploadedFile } from "@/lib/uploads";
+import { assetKindFromMime } from "@/lib/utils";
 
 export type ContentPlatformInput = Platform[];
 
@@ -31,6 +32,15 @@ export interface ContentInput {
     text?: string | null;
     imageUrl?: string | null;
     order?: number;
+  }[];
+  /** Asset da creare insieme al contenuto (per esempio immagini clonate da una proposta). */
+  assets?: {
+    kind?: "IMAGE" | "VIDEO" | "AUDIO" | "FILE";
+    url: string;
+    filename: string;
+    mimeType?: string | null;
+    size?: number | null;
+    metadata?: Prisma.InputJsonValue;
   }[];
 }
 
@@ -103,6 +113,11 @@ export type ContentWithRelations = Prisma.ContentGetPayload<{
    * qualcosa è stato sganciato: va letto subito, non è persistito.
    */
   relationWarnings?: string[];
+  /**
+   * Presente solo in `createContentFromProposal`: true se non è stato creato
+   * nulla perché esisteva già una bozza per quella proposta.
+   */
+  proposalReused?: boolean;
 };
 
 function normalizeDate(d: Date | string | null | undefined): Date | null {
@@ -290,6 +305,22 @@ export async function createContent(
           accountId: null,
         })),
       },
+      ...(input.assets && input.assets.length > 0
+        ? {
+            assets: {
+              create: input.assets.map((a) => ({
+                // Il kind è quello dichiarato dal chiamante; in sua assenza
+                // lo decide il MIME: un URL video non diventa mai un asset IMAGE.
+                kind: a.kind ?? assetKindFromMime(a.mimeType ?? undefined),
+                url: a.url,
+                filename: a.filename,
+                mimeType: a.mimeType ?? null,
+                size: a.size ?? null,
+                metadata: a.metadata ?? Prisma.JsonNull,
+              })),
+            },
+          }
+        : {}),
       ...(type === "CAROUSEL"
         ? {
             slides: {
@@ -318,6 +349,114 @@ export async function createContent(
   // Le anomalie di relazione viaggiano con il contenuto: il chiamante deve poter
   // dichiarare che il DRAFT è nato sganciato, senza rileggere il database.
   return relations.warnings.length > 0 ? { ...content, relationWarnings: relations.warnings } : content;
+}
+
+/**
+ * Crea (o recupera) la bozza derivata da una proposta del Catalogo Agenzia.
+ *
+ * Il flusso `?fromProposal=<id>` può innescare la creazione più volte per la
+ * stessa proposta (il client rimonta il componente e React in StrictMode
+ * esegue l'effetto due volte): senza un controllo di unicità prima dell'
+ * insert finiscono nel database due bozze identiche. Qui la prima bozza
+ * esistente per quella proposta viene restituita al chiamante invece di
+ * crearne una seconda.
+ *
+ * Le immagini ufficiali della proposta (`CatalogImage`) puntano agli originali
+ * remoti e non hanno alcun legame con i contenuti: vengono clonate qui come
+ * `ContentAsset` agganciati alla nuova bozza, così il contenuto nasce con le
+ * stesse immagini della proposta.
+ */
+export async function createContentFromProposal(input: {
+  proposalId: string;
+  type?: ContentType;
+  title?: string | null;
+  caption?: string | null;
+  hashtags?: string | null;
+  scheduledDate?: Date | string | null;
+  platforms?: ContentPlatformInput;
+}): Promise<ContentWithRelations> {
+  const proposalId = input.proposalId.trim();
+
+  // De-duplicazione: una proposta ha al più una bozza. Se esiste già, si
+  // restituisce quella invece di creare un doppio.
+  const existing = await prisma.content.findFirst({
+    where: { catalogProposalId: proposalId },
+    orderBy: { createdAt: "desc" },
+    include: contentInclude,
+  });
+
+  if (existing) {
+    // Backfill: bozze nate prima di questo controllo non hanno asset. Se la
+    // proposta ha immagini e la bozza ne è priva, si colmano ora invece di
+    // lasciare in giro una bozza senza locandina.
+    if (existing.assets.length === 0) {
+      const proposal = await prisma.catalogProposal.findUnique({
+        where: { id: proposalId },
+        select: { images: { orderBy: { acquiredAt: "asc" as const } } },
+      });
+      if (proposal && proposal.images.length > 0) {
+        await prisma.contentAsset.createMany({
+          data: proposal.images.map((img) => ({
+            kind: "IMAGE" as const,
+            contentId: existing.id,
+            url: img.url,
+            filename: img.filename,
+            metadata: {
+              source: "catalog-proposal",
+              catalogImageId: img.id,
+              role: img.role,
+              isOfficial: img.isOfficial,
+            },
+          })),
+        });
+        await logAudit("CONTENT_PROPOSAL_ASSETS_COPIED", "Content", existing.id, {
+          proposalId,
+          assets: proposal.images.length,
+        });
+      }
+    }
+    return { ...existing, proposalReused: true };
+  }
+
+  const proposal = await prisma.catalogProposal.findUnique({
+    where: { id: proposalId },
+    include: { images: { orderBy: { acquiredAt: "asc" as const } } },
+  });
+  if (!proposal) {
+    throw new Error(`La proposta "${proposalId}" non esiste più nel catalogo.`);
+  }
+
+  const content = await createContent({
+    type: input.type,
+    title: input.title || proposal.name,
+    // La caption di default segue il flusso: un VIDEO è un teaser di
+    // incuriosimento e non cita l'offerta; per un POST la proposta è il punto
+    // di partenza del flusso offerta/locandina e il testo la presenta come tale.
+    caption:
+      input.caption ||
+      (input.type === "VIDEO"
+        ? `${proposal.destination || proposal.name}: il posto che vale il viaggio. Scopri di più sulla nostra pagina.`
+        : `Offerta speciale per ${proposal.destination || proposal.name}! \n\nScopri tutti i dettagli sulla nostra pagina integrata.`),
+    hashtags: input.hashtags,
+    scheduledDate: input.scheduledDate,
+    platforms: input.platforms,
+    // Il legame con la proposta è ciò che rende la de-duplicazione possibile:
+    // senza questo campo il controllo precedente non troverebbe mai nulla.
+    catalogProposalId: proposal.id,
+    assets: proposal.images.map((img) => ({
+      kind: "IMAGE" as const,
+      url: img.url,
+      filename: img.filename,
+      metadata: {
+        source: "catalog-proposal",
+        catalogImageId: img.id,
+        role: img.role,
+        isOfficial: img.isOfficial,
+      },
+    })),
+  });
+
+  return { ...content, proposalReused: false };
 }
 
 export async function updateContent(

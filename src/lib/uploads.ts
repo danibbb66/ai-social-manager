@@ -1,6 +1,15 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { uniqueFilename, isImageMime, isVideoMime } from "@/lib/utils";
+import {
+  writeFile as storageWrite,
+  deleteFile as storageDelete,
+  fileExists as storageExists,
+  toKey as storageKey,
+} from "@/lib/storage";
+import {
+  uniqueFilename,
+  isImageMime,
+  isVideoMime,
+  mimeFromFilename,
+} from "@/lib/utils";
 
 export interface SavedFile {
   url: string;
@@ -120,7 +129,12 @@ export function sniffMediaMime(buffer: Buffer): string | null {
  * .mov non standard), evitando di rompere caricamenti oggi funzionanti.
  * In ogni altro caso il file viene rifiutato.
  */
-export function detectUploadKind(buffer: Buffer, declaredMime?: string): {
+export function detectUploadKind(
+  buffer: Buffer,
+  declaredMime?: string,
+  /** Nome originale del file: ultima fonte per dedurre il MIME video. */
+  filename?: string
+): {
   mimeType: string;
   kind: UploadKind;
 } {
@@ -130,6 +144,16 @@ export function detectUploadKind(buffer: Buffer, declaredMime?: string): {
   if (isImageMime(mime)) return { mimeType: mime, kind: "IMAGE" };
   if (isVideoMime(mime)) return { mimeType: mime, kind: "VIDEO" };
 
+  // Fallback sull'estensione: alcuni file video (MOV/MKV non standard) non
+  // hanno una firma riconoscibile nei magic bytes e il client può non dichiarare
+  // un MIME utile. Senza questo ripiego un video legittimo verrebbe rifiutato.
+  // Solo i video: per le immagini i magic bytes coprono già tutti i formati
+  // accettati, e un'immagine riconosciuta solo dal nome sarebbe una fede cieca.
+  const extensionMime = mimeFromFilename(filename);
+  if (extensionMime && isVideoMime(extensionMime)) {
+    return { mimeType: extensionMime, kind: "VIDEO" };
+  }
+
   const seen = sniffed ?? mime ?? "";
   throw new UnsupportedMediaTypeError(
     `Tipo di file non supportato${seen ? ` (${seen})` : ""}: carica un'immagine ` +
@@ -137,7 +161,7 @@ export function detectUploadKind(buffer: Buffer, declaredMime?: string): {
   );
 }
 
-/** Salva un file caricato nella cartella pubblica dedicata (immagini/video/altro) */
+/** Salva un file caricato nello storage (locale o cloud) e restituisce l'URL. */
 export async function saveUploadedFile(input: {
   buffer: Buffer;
   originalName: string;
@@ -149,14 +173,12 @@ export async function saveUploadedFile(input: {
     : isVideoMime(mime)
       ? "videos"
       : "files";
-  const dir = path.join(process.cwd(), "public", "uploads", sub);
-  await fs.mkdir(dir, { recursive: true });
   const filename = uniqueFilename(input.originalName);
-  const filepath = path.join(dir, filename);
-  await fs.writeFile(filepath, input.buffer);
+  const key = `uploads/${sub}/${filename}`;
+  const url = await storageWrite(key, input.buffer, mime);
   return {
-    url: `/uploads/${sub}/${filename}`,
-    pathname: filepath,
+    url,
+    pathname: key,
     mimeType: mime,
     size: input.buffer.length,
   };
@@ -170,30 +192,14 @@ export async function saveUploadedFile(input: {
  * rotta, che è peggio di rifare il download.
  */
 export async function uploadedFileExists(url: string): Promise<boolean> {
-  const match = url.match(/^\/uploads\/([a-z]+)\/([^/]+)$/);
-  if (!match) return false;
-  const [, sub, name] = match;
-  if (sub === ".." || name === ".." || !name) return false;
-  try {
-    await fs.access(path.join(process.cwd(), "public", "uploads", sub, name));
-    return true;
-  } catch {
-    return false;
-  }
+  const key = storageKey(url);
+  if (!/^uploads\/[a-z]+\/[^/]+$/.test(key) || key.includes("..")) return false;
+  return storageExists(key);
 }
 
-/** Elimina un file dagli upload (il percorso deve essere sotto /uploads) */
+/** Elimina un file dagli upload (il percorso deve essere sotto /uploads). */
 export async function deleteUploadedFile(url: string): Promise<boolean> {
-  const match = url.match(/^\/uploads\/([a-z]+)\/([^/]+)$/);
-  if (!match) return false;
-  const [, sub, name] = match;
-  if (sub === ".." || name === ".." || !name) return false;
-  const filepath = path.join(process.cwd(), "public", "uploads", sub, name);
-  try {
-    await fs.access(filepath);
-    await fs.unlink(filepath);
-    return true;
-  } catch {
-    return false;
-  }
+  const key = storageKey(url);
+  if (!/^uploads\/[a-z]+\/[^/]+$/.test(key) || key.includes("..")) return false;
+  return storageDelete(key);
 }

@@ -1,6 +1,6 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { getImageProvider, getStockProvider } from "@/lib/images/factory";
+import { readFileBuffer } from "@/lib/storage";
 import { renderSocialCreative } from "@/lib/images/social-creative";
 import {
   COMMERCIAL_EXTRACTION_METHOD,
@@ -12,9 +12,13 @@ import { isSupplierOriginal } from "@/lib/services/offer-creative";
 import { sceneForTopic, scenePromptFor } from "@/lib/ai/topic-visual";
 import { kickerForFormat } from "@/lib/ai/format-kicker";
 import { editorialPoints } from "@/lib/ai/editorial-matrix";
+import { curatedFolderSlug, videoSearch } from "@/lib/ai/travel-knowledge";
+import { listCuratedPhotos } from "@/lib/curated/media";
 import { createAsset, linkAsset, listAssets } from "@/lib/services/media";
 import { saveUploadedFile, sniffMediaMime, uploadedFileExists, deleteUploadedFile } from "@/lib/uploads";
 import { logAudit } from "@/lib/audit";
+import { logAIError } from "@/lib/logger";
+import { config } from "@/lib/env";
 
 /**
  * Visual di un contenuto: ricerca nella libreria stock, applicazione del
@@ -159,6 +163,16 @@ export function stockQueryFrom(
     .find((value) => value.length > 0);
   if (!source) return "";
 
+  // Un luogo passato come topic (non come destinazione esplicita) va cercato
+  // comunque col landmark inglese: "zanzibar" da solo su un provider indicizzato
+  // in inglese trova barche, non la spiaggia. Stesso criterio del ramo
+  // destinazione, così "crea un post per zanzibar" e "destinazione Zanzibar"
+  // cercano la stessa scena pertinente.
+  const topicCurated = videoSearch(source);
+  if (topicCurated) {
+    return (topicCurated.landmarks[0] ?? topicCurated.name).trim().slice(0, 120);
+  }
+
   const scene = sceneForTopic(source);
   if (scene) return scene.stock;
 
@@ -181,6 +195,16 @@ export function stockQueryFrom(
  * anche qui, ma il risultato non viene mai sostituito da una scena.
  */
 function cleanQuery(destination: string, topic?: string | null): string {
+  // Destinazioni curate: la foto si cerca col LANDMARK iconico IN INGLESE
+  // (es. "athens acropolis", "elafonissi beach crete", "maldives beach").
+  // Pixabay indicizza in inglese e il nome italiano ("creta", "atene") trova
+  // foto sbagliate (fiori, strade generiche, argilla). Il primo landmark è il
+  // più rappresentativo della destinazione.
+  const curated = videoSearch(destination);
+  if (curated) {
+    return (curated.landmarks[0] ?? curated.name).trim().slice(0, 120);
+  }
+
   const tokens = destination
     .split(/[^\p{L}\p{N}]+/u)
     .map((token) => token.trim())
@@ -276,6 +300,7 @@ async function applySocialTemplate(
     topic: string | null;
     title: string | null;
     format?: string | null;
+    callout?: string | null;
   }
 ): Promise<TemplatedImage> {
   // La destinazione vera e il topic restano distinti: il topic è la richiesta
@@ -301,6 +326,8 @@ async function applySocialTemplate(
       title,
       subtitle: null,
       kicker,
+      callout: input.callout ?? null,
+      orientation: "portrait",
       // I consigli e le tappe entrano dentro la card. In questo flusso non c'è
       // un catalogo da cui prendere i dati, quindi i punti vengono dalla
       // conoscenza della destinazione: è l'unica fonte che esiste qui, ed è
@@ -336,6 +363,13 @@ export type StockVisualOutcome =
       status: "attached";
       assetId: string;
       url: string;
+      /**
+       * Copia PULITA (senza titolo/logo) della stessa immagine, salvata in
+       * Media Library come asset scollegato. Presente solo quando il chiamante
+       * la chiede (`keepCleanScene`): è la scena da usare nelle clip successive
+       * alla copertina, dove l'overlay non deve più comparire.
+       */
+      cleanSceneUrl?: string | null;
       /** Chi ha fornito il file: "magnific-stock", "media-library" o il generatore. */
       source: string;
       query: string;
@@ -366,12 +400,10 @@ export type StockVisualOutcome =
     }
   | { status: "failed"; reason: string; query: string };
 
-/** Legge un file già presente in /uploads, o null se non esiste. */
+/** Legge un file già presente nello storage (uploads/…), o null se non esiste. */
 async function readUploadedFile(url: string): Promise<Buffer | null> {
-  const match = url.match(/^\/uploads\/([a-z]+)\/([^/]+)$/);
-  if (!match) return null;
   try {
-    return await fs.readFile(path.join(process.cwd(), "public", "uploads", match[1], match[2]));
+    return await readFileBuffer(url);
   } catch {
     return null;
   }
@@ -494,6 +526,13 @@ export async function attachStockVisual(input: {
   topic?: string | null;
   title?: string | null;
   format?: string | null;
+  /** Testo "gancio" centrato sul post, fornito dall'utente in chat. */
+  callout?: string | null;
+  /**
+   * Salva anche la copia pulita (senza overlay) come asset scollegato: la usa
+   * la pipeline video per le clip successive alla copertina.
+   */
+  keepCleanScene?: boolean;
 }): Promise<StockVisualOutcome> {
   const query = stockQueryFrom(input.destination, input.topic, input.title);
   if (!query) {
@@ -518,32 +557,64 @@ export async function attachStockVisual(input: {
   let generated = false;
   let generatedPrompt: string | null = null;
 
-  const stock = await provider.searchImage({ query });
-  if (stock) {
-    buffer = stock.buffer;
-    source = stock.provider;
-    sourceUrl = stock.sourceUrl;
-    pageUrl = stock.pageUrl;
-    resourceId = stock.resourceId;
-    originalFilename = stock.filename;
-  } else {
-    const local = await findLocalStock(query);
-    if (local) {
-      const file = await readUploadedFile(local.url);
-      if (file && file.length > 0) {
-        buffer = file;
-        source = "media-library";
-        sourceUrl = local.url;
-        originalFilename = local.filename;
-        reusedLocalAssetId = local.id;
+  // 0. Visual CURATO (foto selezionate a mano dall'utente): priorità assoluta
+  //    sul provider stock. L'utente riempie public/curated/photos/<slug> con le
+  //    foto approvate; se la cartella ha file, uno di questi è il visual, senza
+  //    interrogare Pixabay/Pexels e senza il rischio di foto sbagliate.
+  const curatedSlug = curatedFolderSlug(
+    placeNameFrom(input.destination, input.topic, input.title) ||
+      input.destination ||
+      input.topic ||
+      ""
+  );
+  if (!buffer && curatedSlug) {
+    const curatedPhotos = await listCuratedPhotos(curatedSlug);
+    if (curatedPhotos.length > 0) {
+      const picked = curatedPhotos[Math.floor(Math.random() * curatedPhotos.length)];
+      try {
+        buffer = await readFileBuffer(picked);
+        source = "curated";
+        originalFilename = path.basename(picked);
+      } catch (e) {
+        logAIError("curated.photo.read", { slug: curatedSlug, path: picked }, e);
+      }
+    }
+  }
+
+  // 1-2. Ricerca stock (Pixabay/Magnific) e Media Library SOLO se il visual
+  //    curato non ha già fornito una foto E se la modalità "solo curato" non è
+  //    attiva. Con CURATED_MEDIA_ONLY=true ogni foto arriva esclusivamente
+  //    dalle cartelle public/curated/photos/<slug>, mai dai provider esterni.
+  if (!buffer && !config.curatedMediaOnly) {
+    const stock = await provider.searchImage({ query, orientation: "portrait" });
+    if (stock) {
+      buffer = stock.buffer;
+      source = stock.provider;
+      sourceUrl = stock.sourceUrl;
+      pageUrl = stock.pageUrl;
+      resourceId = stock.resourceId;
+      originalFilename = stock.filename;
+    } else {
+      const local = await findLocalStock(query);
+      if (local) {
+        const file = await readUploadedFile(local.url);
+        if (file && file.length > 0) {
+          buffer = file;
+          source = "media-library";
+          sourceUrl = local.url;
+          originalFilename = local.filename;
+          reusedLocalAssetId = local.id;
+        }
       }
     }
   }
 
   // 3. La libreria non ha nulla per questa destinazione: invece di lasciare il
   //    post senza visuale, si genera una fotografia. È l'ultimo gradino, quindi
-  //    vale solo quando stock e Media Library hanno già detto di no.
-  if (!buffer) {
+  //    vale solo quando stock e Media Library hanno già detto di no. In
+  //    modalità "solo curato" non si genera nulla: una destinazione senza foto
+  //    selezionate resta senza post.
+  if (!buffer && !config.curatedMediaOnly) {
     const fallback = await generateFallbackPhoto(query, input.contentId, input.topic);
     if (fallback) {
       buffer = fallback.buffer;
@@ -559,10 +630,11 @@ export async function attachStockVisual(input: {
     return {
       status: "failed",
       query,
-      reason:
-        `nessuna immagine trovata nella libreria stock per "${query}" ` +
-        "(né in Magnific né nella Media Library) e il provider immagini non ha " +
-        "potuto generarla.",
+      reason: config.curatedMediaOnly
+        ? `nessuna foto selezionata per "${query}": aggiungi le immagini in public/curated/photos/<destinazione> oppure disattiva CURATED_MEDIA_ONLY.`
+        : `nessuna immagine trovata nella libreria stock per "${query}" ` +
+          "(né in Magnific né nella Media Library) e il provider immagini non ha " +
+          "potuto generarla.",
     };
   }
 
@@ -577,6 +649,7 @@ export async function attachStockVisual(input: {
     topic: (input.topic ?? "").trim() || null,
     title: input.title ?? null,
     format: input.format,
+    callout: input.callout ?? null,
   });
 
   // Un asset già presente in Media Library, senza template applicabile, viene
@@ -602,6 +675,9 @@ export async function attachStockVisual(input: {
         status: "attached",
         assetId: linked.id,
         url: linked.url,
+        // Senza template applicato il visual È pulito: la stessa immagine fa
+        // da copertina e da scena, se il chiamante la chiede per il video.
+        cleanSceneUrl: input.keepCleanScene ? linked.url : null,
         source,
         query,
         template: STOCK_VISUAL_TEMPLATE,
@@ -695,10 +771,44 @@ export async function attachStockVisual(input: {
     generated,
   });
 
+  // Copia pulita per la pipeline video: le clip successive alla copertina
+  // devono mostrare l'immagine in movimento SENZA titolo né logo. L'originale
+  // (pre-template) è già in mano qui: si salva una volta, scollegato, con la
+  // provenienza dichiarata. Best-effort: se fallisce, il video resta
+  // renderizzabile e il chiamante vede cleanSceneUrl null.
+  let cleanSceneUrl: string | null = null;
+  if (input.keepCleanScene && buffer.length > 0) {
+    try {
+      const cleanSaved = await saveUploadedFile({
+        buffer,
+        originalName: `scene-${originalName ?? `stock-${query}`}`,
+        mimeType: templated.mimeType,
+      });
+      const cleanAsset = await createAsset({
+        url: cleanSaved.url,
+        filename: cleanSaved.url.split("/").pop() ?? "scene.jpg",
+        mimeType: cleanSaved.mimeType,
+        size: cleanSaved.size,
+        kind: "IMAGE",
+        contentId: null,
+        metadata: {
+          origin: "video-scene",
+          query,
+          source,
+          coverAssetId: asset.id,
+        },
+      });
+      cleanSceneUrl = cleanAsset.url;
+    } catch (e) {
+      logAIError("content-stock.cleanScene", { contentId: input.contentId }, e);
+    }
+  }
+
   return {
     status: "attached",
     assetId: asset.id,
     url: asset.url,
+    cleanSceneUrl,
     source,
     query,
     template: STOCK_VISUAL_TEMPLATE,

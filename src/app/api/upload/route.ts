@@ -90,11 +90,13 @@ export async function POST(req: NextRequest) {
 
     // Il kind è derivato dai byte reali del file, non dal MIME né dall'estensione
     // dichiarati dal client: un video non deve essere registrato come IMAGE.
+    // Il nome originale serve solo come ultima fonte per i video senza firma
+    // riconoscibile nei magic bytes.
     // La verifica avviene prima della scrittura, così un file rifiutato non
     // lascia mai un file orfano su disco.
     let detected: ReturnType<typeof detectUploadKind>;
     try {
-      detected = detectUploadKind(buffer, file.type);
+      detected = detectUploadKind(buffer, file.type, file.name);
     } catch (e) {
       console.error("Upload: tipo file non supportato", file.name, e);
       return Response.json(

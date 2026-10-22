@@ -82,6 +82,62 @@ export function isVideoMime(mime: string | undefined) {
   return mime.startsWith("video/");
 }
 
+/**
+ * MIME type dei formati video riconoscibili dall'estensione.
+ *
+ * Serve quando un file video non ha una firma riconoscibile nei magic bytes
+ * (alcuni MOV/MKV prodotti da exporter non standard): l'estensione dichiarata
+ * nel nome diventa l'ultimo indizio prima di rifiutare il file.
+ */
+export const VIDEO_MIME_BY_EXTENSION: Record<string, string> = {
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm",
+  ".mkv": "video/x-matroska",
+  ".avi": "video/x-msvideo",
+};
+
+/** MIME video dedotto dall'estensione del nome file, o null. */
+export function mimeFromFilename(filename: string | undefined): string | null {
+  if (!filename) return null;
+  const dot = filename.lastIndexOf(".");
+  if (dot < 0) return null;
+  const ext = filename.slice(dot).toLowerCase();
+  return VIDEO_MIME_BY_EXTENSION[ext] ?? null;
+}
+
+/** Estensione canonica per un MIME video, o null. */
+export function videoExtensionForMime(mime: string | undefined): string | null {
+  switch (mime) {
+    case "video/mp4":
+      return "mp4";
+    case "video/quicktime":
+      return "mov";
+    case "video/webm":
+      return "webm";
+    case "video/x-matroska":
+      return "mkv";
+    case "video/x-msvideo":
+      return "avi";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Kind di ContentAsset dedotto dal MIME reale del file.
+ *
+ * Usato ovunque un asset venga creato senza kind esplicito: un video non deve
+ * finire nel database come IMAGE solo perché il chiamante non ha valorizzato
+ * il campo.
+ */
+export function assetKindFromMime(mime: string | null | undefined): "IMAGE" | "VIDEO" | "FILE" {
+  if (isImageMime(mime ?? undefined)) return "IMAGE";
+  if (isVideoMime(mime ?? undefined)) return "VIDEO";
+  return "FILE";
+}
+
 export function truncate(s: string, max = 80) {
   if (!s) return "";
   return s.length > max ? s.slice(0, max).trimEnd() + "…" : s;

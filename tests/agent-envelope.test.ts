@@ -26,6 +26,7 @@ import { getContent, deleteContent, createContent } from "../src/lib/services/co
 import { setImageProvider, setStockProvider } from "../src/lib/images/factory";
 import type { GeneratedImage, ImageProvider } from "../src/lib/images/provider";
 import { installFakeStock } from "./helpers/stock";
+import { installFakeStockVideo, resetStockVideo } from "./helpers/stock-video";
 
 /**
  * Envelope dell'agente e percorso Chat → createContent.
@@ -128,6 +129,8 @@ async function runScripted(userMessage: string, replies: string[]) {
   setImageProvider(images);
   // Il visual del DRAFT arriva dalla libreria stock: doppione, nessuna rete.
   installFakeStock();
+  // Anche la ricerca di video stock è un doppione (coda vuota): nessuna rete.
+  installFakeStockVideo();
 
   const events: AgentStreamEvent[] = [];
   const result = await runAgent({
@@ -171,6 +174,7 @@ after(async () => {
   setAiProvider(null);
   setImageProvider(null);
   setStockProvider(null);
+  resetStockVideo();
   // Prima dei contenuti: `deleteContent` azzera `contentId` e il legame
   // con i job andrebbe perso. Gli asset stock nati con il DRAFT vanno via
   // insieme a loro.

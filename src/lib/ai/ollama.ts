@@ -8,6 +8,7 @@ import {
   AiUnavailableError,
 } from "@/lib/ai/provider";
 import { config } from "@/lib/env";
+import { logAIError } from "@/lib/logger";
 
 interface OllamaChatRequest {
   model: string;
@@ -85,8 +86,89 @@ function timeoutSignal(ms: number) {
   };
 }
 
+/**
+ * Perché una richiesta è stata abortita dal watchdog.
+ *
+ * `idle` = Ollama non ha prodotto nulla per il timeout di inattività (il caso
+ * tipico è il primo token che non arriva mai, o uno stream morto a metà).
+ * `total` = tetto totale della richiesta superato.
+ */
+type WatchdogReason = "idle" | "total";
+
+/**
+ * Watchdog a doppio orologio per una richiesta streaming.
+ *
+ * Il vecchio timeout unico abortiva la richiesta a un tempo fisso dal via: con
+ * un modello 8B lento a produrre il primo token andava bene, ma una generazione
+ * lunga e vena veniva tagliata a metà anche se i token continuavano ad arrivare.
+ * Qui l'orologio di inattività viene riarato a ogni pacchetto ricevuto
+ * (`touch()`), quindi la generazione prosegue finché Ollama produce; il tetto
+ * totale resta come rete di sicurezza contro stream infiniti.
+ */
+class StreamWatchdog {
+  readonly signal: AbortSignal;
+  private readonly controller = new AbortController();
+  private readonly idleMsValue: number;
+  private readonly totalMsValue: number;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private totalTimer: ReturnType<typeof setTimeout> | null = null;
+  private abortReason: WatchdogReason | null = null;
+
+  constructor(idleMs: number, totalMs: number) {
+    this.idleMsValue = idleMs;
+    this.totalMsValue = totalMs;
+    this.totalTimer = this.armTimer(totalMs, "total");
+    this.idleTimer = this.armTimer(idleMs, "idle");
+    this.signal = this.controller.signal;
+  }
+
+  private armTimer(ms: number, reason: WatchdogReason) {
+    const timer = setTimeout(() => this.abort(reason), ms);
+    // Il timer non deve tenere vivo il processo solo per sé.
+    timer.unref?.();
+    return timer;
+  }
+
+  private abort(reason: WatchdogReason) {
+    // Il primo motivo vince: dopo l'abort i timer residui non contano.
+    if (this.abortReason) return;
+    this.abortReason = reason;
+    this.controller.abort();
+  }
+
+  /** Un pacchetto è arrivato: il modello è vivo, si riarma l'inattività. */
+  touch() {
+    if (this.abortReason) return;
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = this.armTimer(this.idleMs, "idle");
+  }
+
+  get reason(): WatchdogReason | null {
+    return this.abortReason;
+  }
+
+  get idleMs(): number {
+    return this.idleMsValue;
+  }
+
+  get totalMs(): number {
+    return this.totalMsValue;
+  }
+
+  clear() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    if (this.totalTimer) clearTimeout(this.totalTimer);
+    this.idleTimer = null;
+    this.totalTimer = null;
+  }
+}
+
 function isAbortError(e: unknown): boolean {
-  return e instanceof Error && e.name === "AbortError";
+  // Niente `instanceof Error`: in Node il fetch di undici rifiuta con una
+  // DOMException ("AbortError"), che NON è un instanceof Error. Sbagliare qui
+  // trasformava un timeout in un falso "connessione interrotta".
+  const name = (e as { name?: unknown } | null)?.name;
+  return name === "AbortError" || name === "TimeoutError";
 }
 
 export class OllamaProvider implements AiProvider {
@@ -163,6 +245,31 @@ export class OllamaProvider implements AiProvider {
     };
   }
 
+  /**
+   * Messaggio per l'utente in caso di timeout, distinto per causa.
+   *
+   * La frase non contiene URL né porte (li maschera già il livello dei
+   * messaggi), ma dice cosa è successo davvero: primo token mai arrivato,
+   * stream morto a metà, o tetto totale superato. Sono tre guasti diversi che
+   * si sistemano in modi diversi.
+   */
+  private timeoutMessage(
+    reason: WatchdogReason | null,
+    idleMs: number,
+    totalMs: number,
+    charsProduced: number | null
+  ): string {
+    const idleS = Math.round(idleMs / 1000);
+    const totalS = Math.round(totalMs / 1000);
+    if (reason === "total") {
+      return `La richiesta a Ollama ha superato il tetto totale di ${totalS}s ed è stata interrotta. Riprova la richiesta.`;
+    }
+    if (charsProduced !== null && charsProduced > 0) {
+      return `Ollama ha smesso di produrre testo per ${idleS}s durante la generazione (timeout di inattività). Riprova la richiesta.`;
+    }
+    return `Ollama non ha prodotto il primo token entro ${idleS}s (timeout di inattività). Il modello ${this.model} può metterci a caricarsi: riprova, e verifica che sia in memoria con "ollama ps".`;
+  }
+
   async chat(
     messages: AiChatMessage[],
     options?: AiChatOptions
@@ -185,8 +292,19 @@ export class OllamaProvider implements AiProvider {
     if (options?.jsonSchema) body.format = options.jsonSchema;
     else if (options?.jsonMode) body.format = "json";
 
-    const timeoutMs = config.ollamaTimeoutMs;
-    const t = timeoutSignal(timeoutMs);
+    // Timeout di inattività (riarmato a ogni pacchetto) + tetto totale.
+    // La configurazione applicativa ha il minimo di 60s imposto in env.ts:
+    // un modello 8B può impiegare decine di secondi prima del primo token.
+    // L'override per chiamata è un canale esplicito in codice (test,
+    // diagnostica): chi lo usa dichiara ciò che sta facendo.
+    const idleMs = options?.idleTimeoutMs ?? config.ollamaTimeoutMs;
+    const totalMs = Math.max(
+      options?.totalTimeoutMs ?? config.ollamaTotalTimeoutMs,
+      idleMs
+    );
+    const t = new StreamWatchdog(idleMs, totalMs);
+    const startedAt = Date.now();
+    let firstTokenAt: number | null = null;
 
     let res: Response;
     try {
@@ -197,14 +315,18 @@ export class OllamaProvider implements AiProvider {
         signal: t.signal,
       });
     } catch (e) {
-      if (e instanceof AiUnavailableError) {
-        if (t.signal.aborted) {
-          throw new AiUnavailableError(
-            `Ollama non ha risposto entro ${Math.round(timeoutMs / 1000)}s (timeout). Riprova: la generazione locale può essere lenta.`
-          );
-        }
-        throw e;
+      if (t.signal.aborted) {
+        logAIError("ollama.timeout", {
+          model: this.model,
+          phase: "connect",
+          idleMs,
+          totalMs,
+          elapsedMs: Date.now() - startedAt,
+          firstToken: false,
+        }, e);
+        throw new AiUnavailableError(this.timeoutMessage(t.reason, idleMs, totalMs, null));
       }
+      if (e instanceof AiUnavailableError) throw e;
       throw new AiUnavailableError("Errore di rete verso Ollama", { cause: e });
     }
 
@@ -229,7 +351,8 @@ export class OllamaProvider implements AiProvider {
       const decoder = new TextDecoder();
       let buffer = "";
       let fullText = "";
-
+      // Ogni pacchetto ricevuto riarma il watchdog: una generazione lunga ma
+      // viva non viene mai tagliata dal timeout di inattività.
       let receivedAnyContent = false;
       // Contatori dell'ultimo chunk `done`: diagnostica sul contesto.
       let promptEvalCount: number | undefined;
@@ -238,6 +361,8 @@ export class OllamaProvider implements AiProvider {
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
+          t.touch();
+          if (firstTokenAt === null) firstTokenAt = Date.now();
           buffer += decoder.decode(value, { stream: true });
 
           const lines = buffer.split("\n");
@@ -275,9 +400,22 @@ export class OllamaProvider implements AiProvider {
           }
         }
       } catch (e) {
-        if (isAbortError(e)) {
+        if (isAbortError(e) || t.signal.aborted) {
+          // Diagnostica strutturata: fase, tempo al primo token, caratteri
+          // prodotti. È la differenza fra "Ollama non risponde" e "lo stream è
+          // morto a metà generazione", che si diagnosticano in modo diverso.
+          logAIError("ollama.timeout", {
+            model: this.model,
+            phase: "stream",
+            reason: t.reason,
+            idleMs,
+            totalMs,
+            ttftMs: firstTokenAt === null ? null : firstTokenAt - startedAt,
+            elapsedMs: Date.now() - startedAt,
+            chars: fullText.length,
+          }, e);
           throw new AiUnavailableError(
-            `Ollama ha impiegato troppo tempo a generare la risposta (timeout ${Math.round(timeoutMs / 1000)}s). Riprova la richiesta.`
+            this.timeoutMessage(t.reason, idleMs, totalMs, fullText.length)
           );
         }
         // Connessione interrotta durante lo streaming: errore comprensibile.

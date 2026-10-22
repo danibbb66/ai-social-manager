@@ -108,14 +108,11 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900">Dashboard</h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            Crea con l&apos;AI, poi gestisci e approva tutto da Contenuti.
+            Crea i contenuti, poi gestisci e approva tutto da Contenuti.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <NewContentButton />
-          <LinkButton href="/chat" variant="secondary" size="sm">
-            Chiedi all&apos;AI
-          </LinkButton>
         </div>
       </div>
 
@@ -170,10 +167,10 @@ export default async function DashboardPage() {
         <div className="mt-6">
           <EmptyState
             title="Niente da fare per ora"
-            description="Chiedi all'assistente AI di creare il prossimo contenuto, oppure parti da un'idea."
+            description="Crea il prossimo contenuto dalla sezione Crea video & post."
             action={
-              <LinkButton href="/chat" size="sm">
-                Crea con l&apos;AI
+              <LinkButton href="/generate" size="sm">
+                Crea un contenuto
               </LinkButton>
             }
           />
@@ -181,8 +178,8 @@ export default async function DashboardPage() {
       ) : null}
 
       <p className="mt-6 text-xs text-slate-400">
-        Il flusso è: l&apos;Assistente AI crea la bozza, in Contenuti la
-        controlli, approvi, programmi e pubblichi.
+        Il flusso è: crei la bozza, la controlli in Contenuti, approvi,
+        programmi e pubblichi.
       </p>
     </div>
   );

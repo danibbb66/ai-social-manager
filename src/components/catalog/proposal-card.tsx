@@ -1,5 +1,5 @@
-import Link from "next/link";
-import { AlertTriangle, ExternalLink, MinusCircle } from "lucide-react";
+﻿import Link from "next/link";
+import { AlertTriangle, ExternalLink, MinusCircle, FileText } from "lucide-react";
 import {
   Badge,
   CatalogConfidenceBadge,
@@ -34,16 +34,9 @@ function asDate(value: Date | string | null): Date | null {
 
 function formatDate(value: Date | string | null): string {
   const date = asDate(value);
-  return date ? date.toLocaleDateString("it-IT") : "—";
+  return date ? date.toLocaleDateString("it-IT") : "-";
 }
 
-/**
- * Riga di catalogo.
- *
- * Mostra in modo esplicito che i dati commerciali NON esistono: è la
- * differenza tra "l'offerta costa 1.799 €" e "il prezzo non è disponibile
- * nella fonte", e la seconda è l'unica frase che il sistema potrà usare.
- */
 export function CatalogProposalCard({
   proposal,
   anomalies,
@@ -81,7 +74,7 @@ export function CatalogProposalCard({
         {missing ? (
           <span className="absolute right-2 top-2">
             <Badge className="border-slate-300 bg-slate-100 text-slate-600">
-              Non più sul sito
+              Non piu sul sito
             </Badge>
           </span>
         ) : null}
@@ -127,23 +120,32 @@ export function CatalogProposalCard({
                 key={field.field}
                 className="rounded border border-dashed border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-400"
               >
-                {field.label}: —
+                {field.label}: -
               </span>
             ))}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400">
-          <span>Acquisita {formatDate(proposal.acquiredAt)}</span>
-          <span>Fonte: {proposal.source?.domain ?? "—"}</span>
+        <div className="flex flex-col gap-2 border-t border-slate-100 pt-2">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <span>Acquisita {formatDate(proposal.acquiredAt)}</span>
+            <Link
+              href={proposal.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sky-600 hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              pagina sorgente
+            </Link>
+          </div>
+
           <Link
-            href={proposal.sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sky-600 hover:underline"
+            href={`/contents?fromProposal=${proposal.id}`}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500"
           >
-            <ExternalLink className="h-3 w-3" />
-            pagina sorgente
+            <FileText className="h-3.5 w-3.5" />
+            Trasforma in Post
           </Link>
         </div>
       </div>

@@ -168,23 +168,30 @@ Usi tool reali sui dati: se un tool risponde ok:false riporta il suo messaggio, 
 ## REGOLA PRINCIPALE
 Individua l'azione richiesta, poi usa il tool che la completa direttamente. Non usare tool intermedi.
 
+## COSA PUOI CREARE
+Questa chat crea SOLO post (immagini) e video (reel) con foto reali del luogo. Non esiste alcun Catalogo qui: non parlarne, non cercarlo e non rifiutare mai la creazione per la sua assenza.
+- POST: un'immagine verticale con la foto del luogo, il titolo (nome della destinazione) e il logo. Se l'utente fornisce un testo, questo va al centro con un banner (vedi "TESTO GANCIO").
+- VIDEO: un reel verticale montato con clip reali del luogo.
+Un VIDEO è sempre un reel.
+
+## TESTO "GANCIO" SUL POST (callout)
+Quando l'utente fornisce un testo da stampare DIRETTAMENTE sul post (es. "crea un post per Tokyo con testo: hotel 4★, mezza pensione, dal 22/11/2026 al 27/11/2026, da € 2899", "aggiungi la scritta...", "con testo: ..."), passalo come campo "callout" a createContent con type "POST". È testo FORNITO DALL'UTENTE, quindi può citare prezzi, date e servizi (li ha dettati lui): Il testo dell'utente va al centro della foto con un banner dietro. Il callout si stampa ESATTAMENTE come lo ha scritto l'utente, senza inventarlo né riscriverlo.
+
 ## CREAZIONE CONTENUTI
 Usa createContent quando l'utente chiede di creare un post, un reel, un contenuto, di preparare un post o un contenuto da pubblicare.
 - contentId: non serve, il contenuto è nuovo.
 - topic: argomento esatto chiesto (es. "proposta Calabria"). È un VINCOLO: copy, hashtag e immagine parlano solo di quello, senza altre destinazioni.
 - platforms: array con le piattaforme richieste ["INSTAGRAM","FACEBOOK"], mai stringa.
 - type: "POST" o "VIDEO". Carousel: createCarousel.
-- format: struttura editoriale del post, tra STORYTELLING, TRAVEL_TIPS, ITINERARY, INSPIRATION, HERO_DESTINATION, FAQ, OFFER.
+- format: struttura editoriale del post, tra TRAVEL_TIPS, ITINERARY, HERO_DESTINATION, FAQ.
   Scegli il formato in base a che cosa serve al lettore, e rispettane la struttura:
-  - HERO_DESTINATION: il luogo in primo piano, con i suoi dati reali.
-  - OFFER: il luogo con prezzo, date e servizi in evidenza.
+  - HERO_DESTINATION: il luogo in primo piano.
   - TRAVEL_TIPS: 3 consigli pratici sul posto, uno per riga.
   - ITINERARY: il percorso, una tappa o un giorno per riga.
   - FAQ: una domanda vera sul luogo e la sua risposta chiara.
-  - INSPIRATION e STORYTELLING: il luogo come atmosfera o come racconto.
 createContent produce il DRAFT completo CON il suo visual già collegato (vedi VISUAL).
-- Qualsiasi destinazione o argomento è ammesso, presente o meno nel Catalogo (es. "3 post sulla Grecia"): crea SEMPRE i contenuti richiesti (storytelling, tips, curiosità, annunci) e le relative bozze in DRAFT.
-- Nessun controllo di catalogo blocca la creazione: non verificare se la destinazione esiste nel Catalogo, non rifiutare e non rimandare la richiesta solo perché non c'è. Il Catalogo si consulta per arricchire i dati, mai come condizione per creare.
+- Qualsiasi destinazione o argomento è ammesso (es. "3 post sulla Grecia"): crea SEMPRE i contenuti richiesti e le relative bozze in DRAFT.
+- Nessun controllo blocca la creazione: non rifiutare e non rimandare la richiesta solo perché una destinazione non è presente da qualche parte.
 PIÙ POST NELLO STESSO TURNO: se l'utente chiede N post devi crearli TUTTI nello stesso turno, con una chiamata a createContent per ciascuno: non fermarti al primo e non aspettare un'altra richiesta.
 Riconosci N anche quando non c'è un numero: conta ogni "post"/"reel"/"contenuto" che l'utente nomina. "un post su Ibiza e un post su Mallorca" sono DUE post, "3 post sulla Grecia" sono tre, "1 Grecia + 1 Maldive" sono due.
 Puoi anche chiamare createContent più volte nello stesso envelope: se la richiesta contiene più destinazioni, metti una chiamata per ciascuna.
@@ -204,7 +211,8 @@ createIdea per idee, spunti o proposte da salvare. Non usarlo se l'utente chiede
 I contentId servono solo per contenuti già esistenti. Non inventarli: se manca, chiedilo o usa listContents.
 
 ## VISUAL
-Il visual di ogni post va SEMPRE recuperato cercandolo nella libreria stock (Magnific/Media) in base alla destinazione: createContent fa da solo la ricerca, applica il layout/template e collega il file, quindi nessun post resta senza visual. createContent NON genera immagini AI: generateImage solo se l'utente la chiede esplicitamente. Per i VIDEO usa generateVideo.
+Il visual di ogni post va SEMPRE recuperato cercandolo nella libreria stock (foto di Pixabay) in base alla destinazione: createContent fa da solo la ricerca, applica il layout/template e collega il file, quindi nessun post resta senza visual. createContent NON genera immagini AI: generateImage solo se l'utente la chiede esplicitamente.
+Per i VIDEO: createContent con type "VIDEO" esegue l'intera pipeline IN AUTOMATICO, in un'unica chiamata: crea la bozza, recupera i fotogrammi del luogo dalla libreria stock, lancia subito ffmpeg per renderizzare il reel, e collega l'asset VIDEO alla bozza. Il video è pronto nel DRAFT: NON dire mai all'utente di caricare il file a mano se il tool non ha restituito un errore. Se il tool risponde ok:false con l'errore reale di generazione, riporta QUELLO all'utente: puoi riprovare UNA sola volta se l'errore sembra transitorio (timeout, rete), altrimenti proponi attachVideo (video già in libreria) o il caricamento manuale come ultima opzione. NON ritentare all'infinito e NON inventare strumenti (es. createVideo, uploadVideo). generateVideo serve per rigenerare il video di un contenuto esistente, su richiesta esplicita.
 Il visual deve essere coerente con il topic, senza destinazioni o prodotti non richiesti.
 
 ## PIATTAFORME
@@ -322,19 +330,17 @@ const TEXT_TOOLS_BLOCKED_AFTER_CREATE = new Set(["generateCaption", "generateHas
 /**
  * Formati editoriali ruotati quando un turno produce più post.
  *
- * Tutti e sette, nell'ordine con cui un post si legge dal più discorsivo al più
- * commerciale: la rotazione parte dal racconto e finisce sull'offerta, così due
+ * Tutti e cinque, nell'ordine con cui un post si legge dal più discorsivo al più
+ * commerciale: la rotazione parte dal consiglio e finisce sull'offerta, così due
  * post della stessa richiesta non sono due stessi pezzi con un nome diverso.
  *
  * OFFER e FAQ chiedono dati commerciali per essere onesti: dove i dati non ci
  * sono la copy non inventa e lo dichiara, quindi sono ammessi anche loro.
- * Escluderli lascerebbe due dei sette formati senza struttura distinta.
+ * Escluderli lascerebbe due dei cinque formati senza struttura distinta.
  */
 const FORMAT_ROTATION = [
-  "STORYTELLING",
   "TRAVEL_TIPS",
   "ITINERARY",
-  "INSPIRATION",
   "HERO_DESTINATION",
   "FAQ",
   "OFFER",

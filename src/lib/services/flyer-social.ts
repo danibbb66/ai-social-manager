@@ -26,8 +26,7 @@
  * ogni file ottenuto prima viene rimosso se la scrittura non va a terra.
  */
 
-import fs from "node:fs/promises";
-import path from "node:path";
+import { readFileBuffer } from "@/lib/storage";
 import type { ContentAsset, ContentStatus, ContentType, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
@@ -468,7 +467,7 @@ export async function createFlyerSocialDraft(input: FlyerSocialInput): Promise<F
 
   let composed: Awaited<ReturnType<typeof composeOfferCreative>>;
   try {
-    const photo = await fs.readFile(path.join(process.cwd(), "public", photoUrl.replace(/^\//, "")));
+    const photo = await readFileBuffer(photoUrl);
     composed = await composeOfferCreative({
       photo,
       extraction,

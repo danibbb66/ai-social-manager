@@ -508,78 +508,6 @@ const KNOWLEDGE: Record<string, DestinationKnowledge> = {
     ],
   },
 
-  "costiera amalfitana": {
-    kind: "coast",
-    tips: [
-      "La Costiera si fa meglio in barca o a piedi che in macchina: la strada è lunghissima e nei giorni di punta si percorre in tempi doppi.",
-      "La Grotta Azzurra si visita solo in barca e solo con certe condizioni di mare: con vento si salta, e va prenotata il giorno prima.",
-      "La Via degli Dei, da Bomerano a Nocelle, si percorre in discesa in tre ore e richiede scarpe chiuse: la gradinata finale è ripida e non ha corrimano.",
-    ],
-    stops: [
-      "Amalfi, il duomo e la scalinata che porta al porto",
-      "Positano e la spiaggia di Fornillo",
-      "Ravello, i giardini di Villa Cimbrone e il Belvedere",
-      "La Via degli Dei da Bomerano a Nocelle",
-    ],
-    faqs: [
-      {
-        question: "La Costiera si fa in auto?",
-        answer:
-          "Si può, ma è sconsigliato in estate: parcheggi a pagamento, traffico bloccato e la barca è più veloce. Chi noleggia lo fa per i monti, non per la costa.",
-      },
-      {
-        question: "Positano o Amalfi?",
-        answer:
-          "Positano è più bella e più cara, con spiagge poche e ripide; Amalfi è più pratica, con il porto grande da cui partono i traghetti e le escursioni.",
-      },
-      {
-        question: "Le escursioni in barca sono sicure?",
-        answer:
-          "Con mare calmo e operatori regolari sì. Evitate le proposte a prezzo basso offerte per strada: le imbarcazioni devono avere l'iscrizione e il capitano a bordo.",
-      },
-    ],
-    hooks: [
-      "Una costa dove ogni pianta arrampicata è stata messa lì a mano, mattina dopo mattina.",
-      "I limoni di Amalfi: così grandi che servono tre mani per portarli al mare.",
-    ],
-  },
-
-  "isola d'elba": {
-    kind: "sea",
-    tips: [
-      "Per vedere l'isola serve la macchina: le spiagge dell'est, fra Rio Marina e Biodola, sono separate da tornanti e si fa solo su strada.",
-      "La strada sterrata che porta alla Fortezza di Montecristo si può fare solo a piedi, e sono quaranta minuti di salita con una vista che ripaga.",
-      "Le spiagge termali di San Piero in Campo hanno libero accesso e acqua calda: sono le uniche del genere e vanno provate.",
-    ],
-    stops: [
-      "Portoferraio e la fortezza di San Giacomo, con il tramonto dal molo",
-      "Marina di Campo e la spiaggia di Barberino, con la Fortezza di Montecristo in vista",
-      "Cavoli e la Baia di Mola, le spiagge dell'est",
-      "San Piero in Campo e le spiagge termali",
-    ],
-    faqs: [
-      {
-        question: "L'Elba si gira senza auto?",
-        answer:
-          "Si può fare una parte in treno e bus, ma le spiagge dell'est restano difficili: anche un'auto piccola sblocca metà isola.",
-      },
-      {
-        question: "Da dove si parte per l'Elba?",
-        answer:
-          "Dal porto di Piombino con traghetto, quarantacinque minuti, o dalla Corsica. In estate i posti auto sul traghetto vanno prenotati e conviene partire al mattino.",
-      },
-      {
-        question: "Quanti giorni servono?",
-        answer:
-          "Tre bastano per la parte principale, quattro se si vuole arrivare a Capraia o fare le spiagge termali senza correrci dentro.",
-      },
-    ],
-    hooks: [
-      "L'isola dove Napoleone ha atteso e poi è fuggito: la fortezza di San Giacomo è ancora lì.",
-      "Il pino marittimo della Mola, una pianta secolare che per la sua posizione è la più bella dell'Asse.",
-    ],
-  },
-
   malta: {
     kind: "coast",
     tips: [
@@ -796,39 +724,1298 @@ const KNOWLEDGE: Record<string, DestinationKnowledge> = {
     ],
   },
 
-  venezia: {
-    kind: "city",
+  thailandia: {
+    kind: "sea",
     tips: [
-      "Venezia si visita in barca o a piedi: le auto non entrano nel centro storico e quelle ai parcheggi di Marghera sono un trucco.",
-      "Il vaporetto, anche solo con il biglietto giornaliero, è il modo più economico di muoversi fra le isole: una giornata intera costa meno di un singolo water taxi.",
-      "Basilica e Palazzo Ducale si vedono in un'ora e mezza se si prenota l'ingresso con orario: senza prenotazione si fa una fila di ore.",
+      "Il periodo migliore sul lato Andaman va da novembre ad aprile: il mare è calmo e le spiagge sono aperte, mentre da maggio a ottobre il monsone chiude molti approdi.",
+      "Fra le isole ci si muove in long-tail boat o traghetto: i prezzi variano molto fra alta e bassa stagione e conviene confermare l'orario la sera prima.",
+      "Sul mare serve una protezione solare resistente all'acqua: il sole equatoriale brucia anche in barca, dove il vento nasconde la scottatura.",
     ],
     stops: [
-      "San Marco e il Palazzo Ducale",
-      "Il Cannaregio e i due Gesuiti",
-      "Murano e Burano con il vaporetto",
-      "La Giudecca e San Giorgio Maggiore",
+      "Krabi e le scogliere di Railay",
+      "Phi Phi e la baia di Maya",
+      "Phuket e la baia di Phang Nga",
+      "Ko Samui e il parco marino di Ang Thong",
     ],
     faqs: [
       {
-        question: "Venezia conviene?",
+        question: "Qual è il periodo migliore per il mare in Thailandia?",
         answer:
-          "In estate i prezzi dei musei sono alti ma restano sotto altre città d'arte d'Europa. Fuori stagione è la città più bella da girare in assoluto.",
+          "Da novembre ad aprile sul lato Andaman (Krabi, Phi Phi, Phuket): il mare è calmo e l'acqua limpida. Da maggio a ottobre piove e molte escursioni in barca si fermano.",
       },
       {
-        question: "Serve comprare il vaporetto?",
+        question: "Phi Phi o Phuket?",
         answer:
-          "Sì, se si visitano anche le isole: il biglietto giornaliero illimitato copre la rete intera, mentre un traghetto singolo costa una cifra.",
+          "Phi Phi ha le baie più scenografiche ma poche spiagge grandi e molta presenza turistica; Phuket ha più servizi e spiagge accessibili. Krabi è il compromesso migliore.",
       },
       {
-        question: "Dove dormire?",
+        question: "Serve prenotare le escursioni in barca?",
         answer:
-          "Vicino a Cannaregio o Santa Croce, che hanno meno rumore notturno e prezzi più bassi di San Marco, che è bellissimo e caro.",
+          "In alta stagione sì: le barche verso Maya Bay e le isole si riempiono, e prenotando la sera prima si evita di perdere la mattinata.",
       },
     ],
     hooks: [
-      "Una città senza strade: si attraversa l'acqua e si arriva solo con la barca.",
-      "Le barche da carico di un'ora fa: Venezia è più lenta di quanto sembri alle dieci del mattino.",
+      "Acqua turchese sotto pareti di roccia, e barche lunghe che scivolano tra le isole.",
+      "Il mare della Thailandia è un arcipelago: si va di baia in baia e ogni approdo è un'altra cartolina.",
+    ],
+  },
+
+  kenya: {
+    kind: "sea",
+    tips: [
+      "La costa keniota è calda tutto l'anno, ma il mare più calmo è da dicembre a marzo e da luglio a ottobre: sono i mesi migliori per le barche e lo snorkeling.",
+      "Diani e Watamu hanno barriere coralline protette: si entra con la guida e si paga un piccolo ticket del parco marino, che conviene includere prima dell'escursione.",
+      "Sulla costa serve la protezione solare e il repellente: le zanzare sono attive al tramonto e le prime ore del mattino.",
+    ],
+    stops: [
+      "Diani Beach e la barriera corallina",
+      "Watamu e il parco marino",
+      "Mombasa e la città vecchia",
+      "Lamu e l'arcipelago",
+    ],
+    faqs: [
+      {
+        question: "Qual è la spiaggia migliore in Kenya?",
+        answer:
+          "Diani Beach è la più lunga e attrezzata, Watamu è più tranquilla e vicina alla barriera corallina. Entrambe hanno mare caldo e sabbia bianca.",
+      },
+      {
+        question: "Si può fare snorkeling in Kenya?",
+        answer:
+          "Sì, nei parchi marini di Watamu e Diani: la barriera è protetta e si entra accompagnati. Il periodo migliore è quando il mare è calmo, da dicembre a marzo.",
+      },
+      {
+        question: "Costa o safari?",
+        answer:
+          "Sono due esperienze diverse: la costa è il mare e il relax, il safari è Maasai Mara. Molti abbinano i due con un volo interno, ma non si fanno nello stesso giorno.",
+      },
+    ],
+    hooks: [
+      "Sabbia bianca, acqua calda e la barriera a pochi bracciate dalla riva.",
+      "La costa del Kenya è lunga e luminosa: mare aperto da una parte, palme e villaggi dall'altra.",
+    ],
+  },
+
+  bali: {
+    kind: "sea",
+    tips: [
+      "La stagione asciutta va da aprile a ottobre, che è anche il periodo col mare più limpido sul lato sud; da novembre il monsone porta pioggia e onde alte.",
+      "Per gli spostamenti conviene noleggiare uno scooter con patente internazionale: le distanze sono brevi ma il traffico del sud è lento.",
+      "Nusa Penida si raggiunge in traghetto da Sanur: la traversata dura circa mezz'ora e in alta stagione va prenotata il giorno prima.",
+    ],
+    stops: [
+      "Nusa Penida e la spiaggia di Kelingking",
+      "Uluwatu e il tempio sull'oceano",
+      "Seminyak e le spiagge del sud",
+      "Ubud e le risaie a terrazze",
+    ],
+    faqs: [
+      {
+        question: "Dov'è il mare più bello a Bali?",
+        answer:
+          "A Nusa Penida e Uluwatu: scogliere sul mare e baie dall'acqua limpida. Le spiagge del sud (Seminyak, Canggu) sono più attrezzate ma con onde da surf.",
+      },
+      {
+        question: "Uluwatu o Nusa Penida?",
+        answer:
+          "Uluwatu ha il tempio sulla scogliera e i tramonti, Nusa Penida ha la spiaggia di Kelingking e le calette isolate. Se il mare è calmo, Nusa Penida vale il traghetto.",
+      },
+      {
+        question: "Serve la patente internazionale per lo scooter?",
+        answer:
+          "Sì, e senza assicurazione adeguata i controlli fermano i turisti al primo posto di blocco. Meglio averla per noleggiare in sicurezza.",
+      },
+    ],
+    hooks: [
+      "Scogliere a picco sull'oceano e terrazze di riso che scendono verso il mare.",
+      "Bali è fatta di contrasti: il blu dell'acqua, il verde del riso, il fuoco dei tramonti.",
+    ],
+  },
+
+  maldive: {
+    kind: "sea",
+    tips: [
+      "Ogni isola delle Maldive è un atollo raggiungibile solo in barca o idrovolante: il trasferimento dall'aeroporto va concordato con il resort prima di partire.",
+      "La stagione asciutta va da novembre ad aprile, che è anche il periodo con l'acqua più trasparente e il mare più calmo per lo snorkeling.",
+      "Il sole è quasi equatoriale: la protezione solare va riapplicata spesso, anche in acqua, perché la riflessione della laguna raddoppia l'esposizione.",
+    ],
+    stops: [
+      "Malé e l'atollo di Ari",
+      "L'atollo di Baa e la baia delle mante",
+      "La laguna e la barriera corallina",
+      "Le isole e le ville sull'acqua",
+    ],
+    faqs: [
+      {
+        question: "Qual è il periodo migliore per le Maldive?",
+        answer:
+          "Da novembre ad aprile: mare calmo, acqua trasparente e poco vento. Da maggio a ottobre può piovere, ma le isole restano visitabili con prezzi più bassi.",
+      },
+      {
+        question: "Si può fare snorkeling dalla spiaggia?",
+        answer:
+          "Sì, in molti atolli la barriera corallina è a pochi passi dalla riva. Le mante dell'atollo di Baa si vedono meglio con un'escursione in barca.",
+      },
+      {
+        question: "Come ci si sposta fra le isole?",
+        answer:
+          "Con barche veloci o idrovolante: le isole non hanno strade di collegamento. Il trasferimento si organizza quasi sempre tramite il resort.",
+      },
+    ],
+    hooks: [
+      "Lagune turchesi e ville sull'acqua: il mare che arriva fino alla porta.",
+      "Alle Maldive l'acqua è così trasparente che la barriera si vede dalla spiaggia.",
+    ],
+  },
+
+  zanzibar: {
+    kind: "sea",
+    tips: [
+      "Il mare più limpido è a nord, a Nungwi e Kendwa: sabbia bianca, acqua turchese e quasi sempre calma.",
+      "La marea conta: su molte spiagge dell'est (Paje, Jambiani) il mare si ritira per decine di metri, quindi l'ora del bagno si sceglie guardando le maree.",
+      "Stone Town si gira a piedi, meglio al mattino presto o al tramonto, quando i vicoli sono freschi e il mercato delle spezie è vivo.",
+    ],
+    stops: [
+      "Nungwi e Kendwa, le spiagge del nord",
+      "Stone Town e il mercato delle spezie",
+      "Paje e la laguna dell'est",
+      "L'atollo di Mnemba e la barriera corallina",
+    ],
+    faqs: [
+      {
+        question: "Qual è il mare più bello a Zanzibar?",
+        answer:
+          "A nord, a Nungwi e Kendwa: sabbia bianca, acqua turchese e quasi sempre calma. A est, Paje e Jambiani hanno maree forti e lagune basse, belle per il kitesurf ma non per nuotare a tutte le ore.",
+      },
+      {
+        question: "Quando andare a Zanzibar?",
+        answer:
+          "Da giugno a ottobre e da dicembre a febbraio: stagione asciutta, mare calmo e limpido. Le piogge lunghe cadono da marzo a maggio.",
+      },
+      {
+        question: "Serve il visto o vaccini per Zanzibar?",
+        answer:
+          "Il visto si ottiene all'arrivo, e la profilassi antimalarica è consigliata per chi visita l'interno. Sulla costa il rischio è basso, ma la profilassi resta raccomandata.",
+      },
+    ],
+    hooks: [
+      "Acqua turchese che sfuma nel bianco della sabbia, e dhow a vela latina all'orizzonte.",
+      "Zanzibar è l'isola delle spezie: il profumo di chiodi di garofano arriva prima ancora di scendere dal traghetto.",
+    ],
+  },
+
+  amsterdam: {
+    kind: "city",
+    tips: [
+      "Amsterdam si gira in bici o a piedi: i tram coprono il centro, ma i canali si attraversano meglio sul ciglio dell'acqua, lontano dal traffico.",
+      "Il Rijksmuseum e il Van Gogh Museum richiedono la prenotazione online: senza si fa la fila solo per il biglietto, e in alta stagione si rischia il tutto esaurito.",
+      "Le case galleggianti si vedono meglio da Prinsengracht e Keizersgracht, la mattina presto, quando i canali sono calmi e i riflessi sono più nitidi.",
+    ],
+    stops: [
+      "Canali e case galleggianti",
+      "Rijksmuseum e Museumplein",
+      "Il quartiere Jordaan",
+      "Mulini a vento e Zaanse Schans",
+    ],
+    faqs: [
+      {
+        question: "Amsterdam conviene girarla in bici?",
+        answer:
+          "Sì, è il mezzo più naturale: le piste ciclabili sono ovunque e il centro è piatto. Basta solo prestare attenzione ai tram e ai pedoni nelle vie più trafficate.",
+      },
+      {
+        question: "Quanto tempo serve per Amsterdam?",
+        answer:
+          "Tre giorni bastano per la città vera: canali, musei e quartieri. Un quarto giorno permette la gita ai mulini di Zaanse Schans, a mezz'ora in treno.",
+      },
+      {
+        question: "Amsterdam è solo coffee shop e vie a luci rosse?",
+        answer:
+          "No, sono una piccola parte del centro: il resto è fatto di canali, musei e quartieri residenziali tranquilli, che spesso chi resta due giorni non vede nemmeno.",
+      },
+    ],
+    hooks: [
+      "Una città dove l'acqua è una strada e la bici il modo naturale di percorrerla.",
+      "I canali che al tramonto si accendono e riflettono le facciate strette delle case galleggianti.",
+    ],
+  },
+  italia: {
+    kind: "sea",
+    tips: [
+      "Il mare del Sud si divide in quattro mondi: Calabria (Costa degli Dei), Sicilia, Puglia (Salento) e Sardegna. Scegliete in base al lato che preferite di mare.",
+      "Le spiagge più belle e meno affollate sono fuori dai borghi serviti: in Calabria e Salento l'auto serve per arrivare alle cale vere.",
+      "Sardegna e Sicilia hanno l'acqua più trasparente; Puglia e Calabria le spiagge di sabbia più lunghe e accessibili.",
+    ],
+    stops: [
+      "Calabria e la Costa degli Dei",
+      "Sicilia e San Vito lo Capo",
+      "Puglia e il Salento",
+      "Sardegna e la Costa Smeralda",
+    ],
+    faqs: [
+      {
+        question: "Qual è il mare più bello del Sud Italia?",
+        answer:
+          "Dipende dai gusti: la Sardegna (Costa Smeralda, Chia) ha l'acqua più trasparente, la Sicilia le spiagge più scenografiche, la Puglia la sabbia più chiara e la Calabria le calette meno battute.",
+      },
+      {
+        question: "Quando andare nel Sud Italia?",
+        answer:
+          "Da fine maggio a settembre; giugno e settembre sono l'ideale per evitare la folla e il caldo. Luglio e agosto restano belli ma pieni.",
+      },
+      {
+        question: "Serve l'auto?",
+        answer:
+          "Per Calabria, Salento e Sardegna sì, per raggiungere le cale. In Sicilia e Puglia i treni coprono le città principali ma non le spiagge migliori.",
+      },
+    ],
+    hooks: [
+      "Quattro mari in uno: il Sud Italia cambia colore tra Tirreno, Ionio e Adriatico.",
+      "Sabbia chiara, acqua scura e borghi sul mare: il profilo inconfondibile del Sud.",
+    ],
+  },
+
+  barcellona: {
+    kind: "city",
+    tips: [
+      "La Sagrada Familia si visita solo con biglietto prenotato online: senza si entra a orari impossibili o non si entra affatto.",
+      "Park Güell va visto all'ora di apertura: dopo diventa una coda unica che sale con il sole.",
+      "Le Ramblas e il Barrio Gótico sono turistici ma bellissimi: meglio al mattino presto, prima dei gruppi.",
+    ],
+    stops: [
+      "Sagrada Familia",
+      "Park Güell e i suoi mosaici",
+      "Las Ramblas e il Barrio Gótico",
+      "La spiaggia della Barceloneta",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Barcellona?",
+        answer:
+          "Tre giorni sono l'ideale: due per Gaudí e il centro, uno per le spiagge e i quartieri (Gràcia, El Born).",
+      },
+      {
+        question: "Barcellona si gira a piedi?",
+        answer:
+          "In buona parte sì, ma la metro è comoda e veloce: le distanze tra Gaudí, il mare e Montjuïc sono più lunghe di quanto sembri.",
+      },
+      {
+        question: "Ci sono belle spiagge in città?",
+        answer:
+          "La Barceloneta è comoda ma affollata; per sabbia migliore conviene Bogatell o una giornata fuori città (Sitges o Costa Brava).",
+      },
+    ],
+    hooks: [
+      "La città delle forme impossibili di Gaudí, dove il modernismo è ovunque guardi.",
+      "Mediterraneo e viali alberati: Barcellona vive tra arte e mare.",
+    ],
+  },
+
+  madrid: {
+    kind: "city",
+    tips: [
+      "Il Museo del Prado va prenotato: le code sono sempre lunghe e il museo ha più sale di quante se ne vedano in un giorno.",
+      "Il Parco del Retiro vale la mattina o il tramonto, quando i madrileni ci vanno davvero.",
+      "La vita notturna e il cibo (tapas, churros) sono il cuore di Madrid: cenare tardi è la regola.",
+    ],
+    stops: [
+      "Il Museo del Prado",
+      "Il Palazzo Reale",
+      "Plaza Mayor e la Puerta del Sol",
+      "Il Parco del Retiro",
+    ],
+    faqs: [
+      {
+        question: "Madrid o Barcellona?",
+        answer:
+          "Madrid è arte, musei e vita di piazza; Barcellona è mare e architettura. Per un viaggio culturale Madrid, per il mare Barcellona.",
+      },
+      {
+        question: "Quando andare a Madrid?",
+        answer:
+          "Primavera e autunno: l'estate è molto calda e ad agosto molti locali chiudono. L'inverno è mite ma secco.",
+      },
+      {
+        question: "Quanto tempo serve?",
+        answer:
+          "Tre giorni bastano per i musei principali e il centro; un quarto se vuoi una gita a Toledo.",
+      },
+    ],
+    hooks: [
+      "La capitale che non dorme: musei enormi e piazze vive fino a tardi.",
+      "Madrid è la Spagna che accoglie tutti, tra il Prado e le tapas.",
+    ],
+  },
+
+  lisbona: {
+    kind: "city",
+    tips: [
+      "Il tram 28 è iconico ma sempre pieno: meglio all'alba o in alternativa a piedi per i quartieri alti.",
+      "Belém si raggiunge col tram 15: Torre di Belém e pastéis de nata vanno visti insieme.",
+      "Lisbona è fatta di salite: scarpe comode e preparatevi a viste mozzafiato dai miradouros.",
+    ],
+    stops: [
+      "Belém e la Torre",
+      "L'Alfama e i suoi vicoli",
+      "L'Elevador de Santa Justa",
+      "Sintra e i suoi palazzi",
+    ],
+    faqs: [
+      {
+        question: "Lisbona è cara?",
+        answer:
+          "È una delle capitali europee più economiche: trasporti, cibo e vino costano meno che in gran parte d'Europa.",
+      },
+      {
+        question: "Vale la pena Sintra?",
+        answer:
+          "Sì, è una gita da fare: palazzi colorati e Pena Palace meritano una giornata intera. Si arriva in treno in meno di un'ora.",
+      },
+      {
+        question: "Come ci si sposta a Lisbona?",
+        answer:
+          "Tram, funicolari e metro funzionano bene; le colline rendono faticoso ma affascinante muoversi a piedi.",
+      },
+    ],
+    hooks: [
+      "La città dai sette colli e le piastrelle azzurre, tra tram gialli e fado.",
+      "Lisbona guarda l'Atlantico da un'altura, e il fiume Tago la abbraccia.",
+    ],
+  },
+
+  atene: {
+    kind: "city",
+    tips: [
+      "L'Acropoli si visita all'apertura: a mezzogiorno il sole e le code sono insostenibili.",
+      "Plaka e Anafiotika sono belle al mattino e alla sera, quando le stradine si svuotano.",
+      "Il Museo dell'Acropoli chiude alcune sale per restauri: controllare gli orari prima.",
+    ],
+    stops: [
+      "L'Acropoli e il Partenone",
+      "Plaka e l'Anafiotika",
+      "Il Museo dell'Acropoli",
+      "Capo Sounion",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Atene?",
+        answer:
+          "Due giorni pieni per l'acropoli, i musei e Plaka; un terzo per Capo Sounion o una gita alle isole vicine.",
+      },
+      {
+        question: "Atene è sicura?",
+        answer:
+          "Le zone turistiche sono sicure; come ovunque, attenzione a borseggiatori nei mezzi affollati e nelle zone più animate.",
+      },
+      {
+        question: "Quando andare ad Atene?",
+        answer:
+          "Primavera e autunno: l'estate è caldissima e molto affollata. L'inverno è mite ma con più pioggia.",
+      },
+    ],
+    hooks: [
+      "La culla della civiltà occidentale, dove ogni pietra ha tremila anni.",
+      "Il Partenone che domina la città, illuminato la sera come un faro.",
+    ],
+  },
+
+  berlino: {
+    kind: "city",
+    tips: [
+      "La Porta di Brandeburgo e l'Isola dei Musei si visitano a piedi, ma Berlino è grande: la metro serve.",
+      "La East Side Gallery è il tratto di muro più noto; il Memoriale dell'Olocausto va visto con rispetto.",
+      "Berlino è nota per la vita notturna e i mercati: il Mauerpark la domenica è imperdibile.",
+    ],
+    stops: [
+      "La Porta di Brandeburgo",
+      "L'Isola dei Musei",
+      "Il Reichstag e la sua cupola",
+      "La East Side Gallery",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Berlino?",
+        answer:
+          "Quattro giorni sono l'ideale: musei, muro, quartieri e un po' di vita notturna. Tre sono un minimo.",
+      },
+      {
+        question: "Berlino è cara?",
+        answer:
+          "Meno di altre capitali europee: cibo, trasporti e ingresso ai musei sono abbordabili. Gli hotel in centro salgono.",
+      },
+      {
+        question: "Quando andare a Berlino?",
+        answer:
+          "Da maggio a settembre il clima è piacevole; l'inverno è freddo ma i mercatini di Natale ripagano.",
+      },
+    ],
+    hooks: [
+      "La città della memoria e della rinascita, dove il muro è diventato arte.",
+      "Berlino vive di contrasti: storia profonda e creatività fresca.",
+    ],
+  },
+
+  praga: {
+    kind: "city",
+    tips: [
+      "Il Ponte Carlo è bellissimo all'alba, quando è quasi vuoto; a mezzogiorno è una folla.",
+      "Il Castello e la Cattedrale di San Vito richiedono tempo: prenotate e arrivate presto.",
+      "Malá Strana e Staré Město si girano a piedi, ma attenzione ai sassi: scarpe comode.",
+    ],
+    stops: [
+      "Il Ponte Carlo",
+      "Il Castello e la Cattedrale di San Vito",
+      "Piazza della Città Vecchia",
+      "Il quartiere di Malá Strana",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Praga?",
+        answer:
+          "Tre giorni per il centro storico e il castello; un quarto per esplorare i quartieri fuori rotta.",
+      },
+      {
+        question: "Praga è cara?",
+        answer:
+          "Cibo e birra sono economici; i prezzi salgono nelle zone più turistiche. Nel complesso è conveniente.",
+      },
+      {
+        question: "Quando andare a Praga?",
+        answer:
+          "Primavera e autunno per il clima e meno folla; l'inverno è magico con i mercatini ma freddo.",
+      },
+    ],
+    hooks: [
+      "La città delle cento torri, dove il gotico si specchia nella Vltava.",
+      "Praga è una fiaba in pietra, con l'orologio astronomico al centro.",
+    ],
+  },
+
+  vienna: {
+    kind: "city",
+    tips: [
+      "Il Palazzo Schönbrunn richiede mezza giornata: prenotate l'orario per le stanze imperiali.",
+      "Il Duomo di Santo Stefano segna il centro: da lì i vicoli portano a caffè storici.",
+      "Il Belvedere ospita Klimt: il bacio è il quadro più cercato, andate presto.",
+    ],
+    stops: [
+      "Il Palazzo Schönbrunn",
+      "Il Duomo di Santo Stefano",
+      "Il Belvedere",
+      "La Ringstrasse e l'Opera",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Vienna?",
+        answer:
+          "Tre giorni per palazzi, musei e caffè storici; un quarto se vuoi aggiungere un concerto o una gita sul Danubio.",
+      },
+      {
+        question: "Vienna è cara?",
+        answer:
+          "Più di altre capitali dell'est ma meno di Parigi o Londra. I musei e l'opera valgono il prezzo.",
+      },
+      {
+        question: "Quando andare a Vienna?",
+        answer:
+          "Maggio-giugno e settembre per il clima; dicembre per i mercatini di Natale, tra i più belli d'Europa.",
+      },
+    ],
+    hooks: [
+      "La capitale della musica e del caffè, elegante su ogni viale.",
+      "Vienna vive tra palazzi imperiali e sale da concerto senza tempo.",
+    ],
+  },
+
+  budapest: {
+    kind: "city",
+    tips: [
+      "Il Parlamento sul Danubio si fotografa al meglio dall'altra sponda, di sera quando è illuminato.",
+      "Le terme Széchenyi sono un rito: andate la mattina presto o fate il bagno serale.",
+      "Il Bastione dei Pescatori regala la vista migliore su Pest: salite al tramonto.",
+    ],
+    stops: [
+      "Il Parlamento sul Danubio",
+      "Il Bastione dei Pescatori",
+      "Le terme Széchenyi",
+      "Il Ponte delle Catene",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Budapest?",
+        answer:
+          "Tre giorni: uno per Buda, uno per Pest e uno per le terme e i mercati.",
+      },
+      {
+        question: "Budapest è economica?",
+        answer:
+          "Sì, è tra le capitali europee più convenienti: cibo, terme e trasporti costano poco.",
+      },
+      {
+        question: "Quando andare a Budapest?",
+        answer:
+          "Primavera e autunno; l'inverno è freddo ma le terme al caldo sono il momento migliore per provarle.",
+      },
+    ],
+    hooks: [
+      "Due città in una, unite dal Danubio e dai ponti illuminati.",
+      "Budapest è terme, architettura e tram gialli sul fiume.",
+    ],
+  },
+
+  copenaghen: {
+    kind: "city",
+    tips: [
+      "I Giardini di Tivoli sono belli anche solo passeggiando; la sera si accendono.",
+      "Nyhavn è il porto colorato più fotografato: andate al mattino per le foto col canale calmo.",
+      "La Sirenetta è piccola e piena di turisti: non aspettatevi molto, ma il lungomare vale.",
+    ],
+    stops: [
+      "I Giardini di Tivoli",
+      "Nyhavn e il porto colorato",
+      "La Sirenetta",
+      "Christiania",
+    ],
+    faqs: [
+      {
+        question: "Copenaghen è cara?",
+        answer:
+          "Sì, è una delle capitali più care d'Europa: alloggio e cibo pesano. Le bici e i musei aiutano a risparmiare.",
+      },
+      {
+        question: "Quanto tempo serve?",
+        answer:
+          "Due-tre giorni per il centro, i canali e un giorno fuori porta (musei o parchi).",
+      },
+      {
+        question: "Come ci si muove a Copenaghen?",
+        answer:
+          "In bici: è la città più bike-friendly del mondo, piatta e con piste ovunque.",
+      },
+    ],
+    hooks: [
+      "La capitale delle bici e del design, dove il colore è arredamento urbano.",
+      "Copenaghen vive sull'acqua, tra canali e case colorate di Nyhavn.",
+    ],
+  },
+
+  dublino: {
+    kind: "city",
+    tips: [
+      "Il Trinity College e il Book of Kells vanno prenotati: è l'attrazione più richiesta.",
+      "Il Temple Bar è caro e turistico: i pub veri sono fuori da quella zona.",
+      "La Guinness Storehouse finisce con un panorama sulla città dal Gravity Bar.",
+    ],
+    stops: [
+      "Il Trinity College e il Book of Kells",
+      "Il Temple Bar",
+      "La Guinness Storehouse",
+      "Il Castello di Dublino",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Dublino?",
+        answer:
+          "Due-tre giorni per la città; un giorno in più se vuoi le scogliere di Moher o una gita fuori porta.",
+      },
+      {
+        question: "Dublino piove sempre?",
+        answer:
+          "Il clima è mite e può piovere in ogni stagione: un ombrello pieghevole risolve tutto l'anno.",
+      },
+      {
+        question: "Dublino è cara?",
+        answer:
+          "Gli alberghi salgono; cibo e pub sono nella media. I musei pubblici sono molti e gratuiti.",
+      },
+    ],
+    hooks: [
+      "La città della birra nera e della musica dal vivo in ogni pub.",
+      "Dublino è accogliente, verdissima e piena di storie da ascoltare.",
+    ],
+  },
+
+  tokyo: {
+    kind: "city",
+    tips: [
+      "Shibuya e il suo incrocio sono l'immagine di Tokyo: il punto migliore per guardarlo è dall'alto.",
+      "Asakusa e il Senso-ji si visitano al mattino presto, prima dei gruppi.",
+      "La metro è perfetta ma complessa: la Suica/Pasmo semplifica ogni corsa.",
+    ],
+    stops: [
+      "Shibuya e il suo incrocio",
+      "Il Tempio di Senso-ji ad Asakusa",
+      "Il Santuario Meiji",
+      "Shinjuku e la Tokyo Tower",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Tokyo?",
+        answer:
+          "Quattro-cinque giorni per i quartieri principali; una settimana se vuoi aggiungere Kyoto o Osaka.",
+      },
+      {
+        question: "Tokyo è cara?",
+        answer:
+          "Può esserlo negli hotel, ma cibo, trasporti e attrazioni sono alla portata. I convenience store e i ristoranti locali aiutano.",
+      },
+      {
+        question: "Quando andare a Tokyo?",
+        answer:
+          "Marzo-aprile (ciliegi) e ottobre-novembre per il clima. L'estate è calda e umida.",
+      },
+    ],
+    hooks: [
+      "La metropoli dove il futuro convive con templi secolari.",
+      "Tokyo è ordine perfetto e caos colorato, tra insegne e ciliegi.",
+    ],
+  },
+
+  kyoto: {
+    kind: "city",
+    tips: [
+      "Il Fushimi Inari è un tunnel infinito di torii rossi: andate all'alba per averlo quasi vuoto.",
+      "Il Padiglione d'Oro Kinkaku-ji si riflette nell'acqua: la foto è da cartolina.",
+      "Il bosco di bambù di Arashiyama è magico al mattino presto, prima della folla.",
+    ],
+    stops: [
+      "Il Santuario Fushimi Inari",
+      "Il Padiglione d'Oro Kinkaku-ji",
+      "Il Bosco di Bambù di Arashiyama",
+      "Il quartiere di Gion",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Kyoto?",
+        answer:
+          "Due-tre giorni per i templi principali e Gion; un giorno in più per Arashiyama con calma.",
+      },
+      {
+        question: "Kyoto o Tokyo?",
+        answer:
+          "Kyoto è la città dei templi e delle geishe, Tokyo la metropoli. Per la cultura tradizionale Kyoto, per la modernità Tokyo.",
+      },
+      {
+        question: "Quando andare a Kyoto?",
+        answer:
+          "In primavera per i ciliegi e in autunno per i colori; l'estate è umida e molto affollata.",
+      },
+    ],
+    hooks: [
+      "La città dei mille templi, dove il Giappone antico è ancora vivo.",
+      "Kyoto è torii rossi, bambù e silenzio tra i giardini.",
+    ],
+  },
+
+  bangkok: {
+    kind: "city",
+    tips: [
+      "Il Palazzo Reale e il Wat Phra Kaew hanno un dress code rigoroso: coprite spalle e ginocchia.",
+      "Il Wat Arun è splendido al tramonto, quando la porcellana brilla sulla riva del fiume.",
+      "I mercati galleggianti sono fuori città: organizzate la gita con un tour la mattina presto.",
+    ],
+    stops: [
+      "Il Palazzo Reale e il Wat Phra Kaew",
+      "Il Wat Arun",
+      "Il mercato galleggiante",
+      "Il Wat Pho e il Buddha sdraiato",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Bangkok?",
+        answer:
+          "Tre-quattro giorni per i templi e i mercati; è spesso la porta d'ingresso per le spiagge thailandesi.",
+      },
+      {
+        question: "Bangkok è sicura?",
+        answer:
+          "Sì per i turisti, con le normali attenzioni: taxi ufficiali, acqua in bottiglia e prudenza la sera tardi.",
+      },
+      {
+        question: "Quando andare a Bangkok?",
+        answer:
+          "Da novembre a febbraio è il periodo migliore (più fresco e asciutto); da marzo fa molto caldo.",
+      },
+    ],
+    hooks: [
+      "La capitale dei templi dorati e del traffico infinito sul Chao Phraya.",
+      "Bangkok è caos profumato di street food e luci dei mercati.",
+    ],
+  },
+
+  singapore: {
+    kind: "city",
+    tips: [
+      "Marina Bay Sands e i Gardens by the Bay sono il simbolo: lo spettacolo luminoso serale è gratuito.",
+      "Il Merlion è una tappa breve: fotografatelo e proseguite verso Marina Bay.",
+      "Singapore è pulitissima e molto ordinata: rispettate le regole, sono rigide.",
+    ],
+    stops: [
+      "Marina Bay Sands",
+      "I Gardens by the Bay",
+      "Il Merlion sul lungomare",
+      "Chinatown e Little India",
+    ],
+    faqs: [
+      {
+        question: "Singapore è cara?",
+        answer:
+          "Gli hotel sì; il cibo nei centri hawker è economico e ottimo. Il trasporto pubblico costa poco.",
+      },
+      {
+        question: "Quanto tempo serve per Singapore?",
+        answer:
+          "Tre giorni bastano per la città; è una tappa perfetta prima o dopo il Sud-est asiatico.",
+      },
+      {
+        question: "Quando andare a Singapore?",
+        answer:
+          "Tutto l'anno, è equatoriale: caldo e umido con piogge brevi. Febbraio-aprile è un po' più asciutto.",
+      },
+    ],
+    hooks: [
+      "La città-giardino del futuro, ordinata e spettacolare.",
+      "Singapore è grattacieli che sfidano la giungla, tra superalberi luminosi.",
+    ],
+  },
+
+  dubai: {
+    kind: "city",
+    tips: [
+      "Il Burj Khalifa si prenota online: il tramonto dall'osservatorio è l'orario più richiesto.",
+      "La Dubai Marina e i suoi canali sono belli di sera; il Burj Al Arab si guarda dalla spiaggia o da un punto panoramico.",
+      "Il deserto è l'altra faccia: un safari tra le dune al tramonto è un'escursione da fare.",
+    ],
+    stops: [
+      "Il Burj Khalifa",
+      "La Dubai Marina",
+      "Il Burj Al Arab",
+      "Il deserto e le dune",
+    ],
+    faqs: [
+      {
+        question: "Dubai è cara?",
+        answer:
+          "Può esserlo per hotel e ristoranti di lusso, ma ci sono opzioni per tutte le tasche e molto è duty-free.",
+      },
+      {
+        question: "Quando andare a Dubai?",
+        answer:
+          "Da novembre a marzo: temperature gradevoli. L'estate è torrida (oltre 40°C), si vive al chiuso.",
+      },
+      {
+        question: "Serve il visto?",
+        answer:
+          "Per molti Paesi il visto all'arrivo è semplice; verificate le regole in base alla cittadinanza prima di partire.",
+      },
+    ],
+    hooks: [
+      "La città dei record, dove il deserto incontra i grattacieli.",
+      "Dubai è lusso e futuro nel cuore delle dune.",
+    ],
+  },
+
+  "hong kong": {
+    kind: "city",
+    tips: [
+      "Victoria Peak si raggiunge col tram storico: la vista sul Victoria Harbour è la migliore della città.",
+      "Il Victoria Harbour di sera ha lo spettacolo di luci Symphony of Lights.",
+      "I mercati notturni (Temple Street) sono un altro mondo: contrattate con il sorriso.",
+    ],
+    stops: [
+      "Victoria Peak e il tram",
+      "Il Victoria Harbour",
+      "Il Tempio di Man Mo",
+      "Il mercato di Temple Street",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Hong Kong?",
+        answer:
+          "Tre-quattro giorni per l'isola e i mercati; è perfetta come tappa di un viaggio in Asia.",
+      },
+      {
+        question: "Hong Kong è cara?",
+        answer:
+          "Gli hotel in centro sì; cibo di strada e dim sum sono economici. Il trasporto pubblico è ottimo e a buon prezzo.",
+      },
+      {
+        question: "Quando andare a Hong Kong?",
+        answer:
+          "Da ottobre a dicembre è il periodo migliore; l'estate è calda e piovosa per il monsone.",
+      },
+    ],
+    hooks: [
+      "La città dove Oriente e Occidente si stringono sul porto più bello del mondo.",
+      "Hong Kong è grattacieli, giunche e mercati che non dormono.",
+    ],
+  },
+
+  seoul: {
+    kind: "city",
+    tips: [
+      "Il Palazzo Gyeongbokgung è la visita classica; il cambio della guardia è uno spettacolo gratuito.",
+      "La N Seoul Tower domina la città: salite al tramonto per la vista migliore.",
+      "Bukchon Hanok è un villaggio di case tradizionali: rispettate chi ci vive.",
+    ],
+    stops: [
+      "Il Palazzo Gyeongbokgung",
+      "La N Seoul Tower",
+      "Il quartiere di Bukchon Hanok",
+      "Myeongdong e lo street food",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Seoul?",
+        answer:
+          "Tre-quattro giorni per palazzi, quartieri e street food; un giorno in più se vuoi una gita fuori porta.",
+      },
+      {
+        question: "Seoul è cara?",
+        answer:
+          "Il cibo è economico e gli ingressi ai palazzi costano poco; gli hotel in centro sono nella media.",
+      },
+      {
+        question: "Quando andare a Seoul?",
+        answer:
+          "Primavera (ciliegi) e autunno per il clima; l'inverno è freddo ma secco e limpido.",
+      },
+    ],
+    hooks: [
+      "La metropoli delle mille luci, tra palazzi imperiali e tecnologia.",
+      "Seoul è K-cultura, street food e skyline che brilla di neon.",
+    ],
+  },
+
+  sydney: {
+    kind: "city",
+    tips: [
+      "L'Opera House e l'Harbour Bridge si attraversano insieme: il traghetto per Manly dà la vista migliore dal porto.",
+      "Bondi Beach è la spiaggia simbolo: il percorso costiero fino a Coogee è una camminata imperdibile.",
+      "Il Royal Botanic Garden è l'oasi verde col panorama sull'Opera.",
+    ],
+    stops: [
+      "L'Opera House",
+      "L'Harbour Bridge",
+      "Bondi Beach",
+      "Il Royal Botanic Garden",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Sydney?",
+        answer:
+          "Quattro giorni per il porto, le spiagge e i quartieri; una settimana se aggiungi le Blue Mountains.",
+      },
+      {
+        question: "Sydney è cara?",
+        answer:
+          "Sì, è tra le città più care dell'emisfero sud: alloggio e cibo pesano, ma molte attrazioni sono gratuite.",
+      },
+      {
+        question: "Quando andare a Sydney?",
+        answer:
+          "Il clima è buono tutto l'anno; la primavera e l'autunno (da noi invertiti) sono l'ideale.",
+      },
+    ],
+    hooks: [
+      "La città del porto perfetto, tra vela bianca e surf.",
+      "Sydney è luce, oceano e una baia che abbraccia tutto.",
+    ],
+  },
+
+  "los angeles": {
+    kind: "city",
+    tips: [
+      "Hollywood e la Walk of Fame sono turistici ma da vedere una volta; il cartello si fotografa da lontano.",
+      "Santa Monica Pier e Venice Beach sono il mare di LA: andate per il tramonto.",
+      "L'auto è quasi obbligatoria: le distanze sono enormi e il traffico leggendario.",
+    ],
+    stops: [
+      "Hollywood e la Walk of Fame",
+      "Santa Monica Pier",
+      "Le colline di Griffith e l'Osservatorio",
+      "Venice Beach",
+    ],
+    faqs: [
+      {
+        question: "Quanto tempo serve per Los Angeles?",
+        answer:
+          "Quattro-cinque giorni per spiagge, Hollywood e un parco; l'auto è necessaria.",
+      },
+      {
+        question: "LA è cara?",
+        answer:
+          "Gli hotel e il noleggio auto pesano; mangiare fuori ha opzioni per tutte le tasche.",
+      },
+      {
+        question: "Quando andare a Los Angeles?",
+        answer:
+          "Quasi tutto l'anno: clima mite. L'estate è asciutta e piacevole, con il famoso 'June gloom' al mattino.",
+      },
+    ],
+    hooks: [
+      "La città del cinema e delle palme, stesa tra oceano e colline.",
+      "Los Angeles è luci, autostrade e tramonti sul Pacifico.",
+    ],
+  },
+
+  miami: {
+    kind: "sea",
+    tips: [
+      "South Beach e Ocean Drive sono il cuore: l'art déco colorato va visto anche di sera.",
+      "Wynwood Walls è il quartiere degli street art: murales giganti a ogni angolo.",
+      "Little Havana profuma di caffè e sigari: la Calle Ocho è viva dal pomeriggio.",
+    ],
+    stops: [
+      "South Beach e Ocean Drive",
+      "Wynwood Walls",
+      "Little Havana",
+      "Key Biscayne",
+    ],
+    faqs: [
+      {
+        question: "Miami è solo spiagge?",
+        answer:
+          "No: arte (Wynwood), cultura latina (Little Havana) e design (art déco) fanno di Miami molto più che una meta balneare.",
+      },
+      {
+        question: "Quando andare a Miami?",
+        answer:
+          "Da novembre ad aprile è il periodo migliore (asciutto e meno umido); l'estate è calda e piovosa.",
+      },
+      {
+        question: "Serve l'auto a Miami?",
+        answer:
+          "Per South Beach no, ma per Wynwood, Key Biscayne e i dintorni è utile o si usa il ridesharing.",
+      },
+    ],
+    hooks: [
+      "La città del neon e delle palme, tra art déco e oceano turchese.",
+      "Miami è il punto dove i Caraibi incontrano l'America.",
+    ],
+  },
+
+  mykonos: {
+    kind: "sea",
+    tips: [
+      "Mykonos Town e i mulini a vento sono il simbolo: Little Venice al tramonto è il momento migliore.",
+      "Le spiagge variano: Paradise e Super Paradise per la vita, Elia e Agios Sostis per il relax.",
+      "I vicoli bianchi del paese sono un labirinto: perdersi è parte del fascino.",
+    ],
+    stops: [
+      "Mykonos Town e i mulini a vento",
+      "Little Venice",
+      "La spiaggia di Paradise",
+      "La spiaggia di Elia",
+    ],
+    faqs: [
+      {
+        question: "Mykonos è cara?",
+        answer:
+          "Sì, è tra le isole greche più care: hotel e locali in alta stagione costano parecchio.",
+      },
+      {
+        question: "Quando andare a Mykonos?",
+        answer:
+          "Da giugno a settembre; luglio-agosto è il pieno (e il più caro), settembre è perfetto con meno folla.",
+      },
+      {
+        question: "Mykonos è solo festa?",
+        answer:
+          "No: il paese, i tramonti e le spiagge del nord sono tranquilli; la vita notturna è concentrata nelle zone note.",
+      },
+    ],
+    hooks: [
+      "L'isola bianca e blu, tra mulini a vento e vicoli da cartolina.",
+      "Mykonos è il cuore glamour delle Cicladi, col vento sempre presente.",
+    ],
+  },
+
+  seychelles: {
+    kind: "sea",
+    tips: [
+      "Le spiagge di granito (Anse Source d'Argent, Anse Lazio) sono uniche al mondo: acqua bassa e rocce scolpite.",
+      "La Vallée de Mai a Praslin ospita il coco de mer, la palma più famosa del pianeta.",
+      "Ogni isola è un atollo raggiungibile in barca o volo interno: organizzate i trasferimenti con anticipo.",
+    ],
+    stops: [
+      "La spiaggia di Anse Source d'Argent",
+      "L'isola di Praslin",
+      "La Vallée de Mai",
+      "Le spiagge di Mahé",
+    ],
+    faqs: [
+      {
+        question: "Le Seychelles sono care?",
+        answer:
+          "Sì, è una meta di fascia alta: resort e trasferimenti pesano. Le guesthouse aiutano a contenere il budget.",
+      },
+      {
+        question: "Quando andare alle Seychelles?",
+        answer:
+          "Tutto l'anno; aprile-maggio e ottobre-novembre sono i mesi con mare più calmo e meno vento.",
+      },
+      {
+        question: "Ci vuole il visto?",
+        answer:
+          "Per molti Paesi no, l'ingresso turistico è agevolato. Verificate i requisiti per la vostra cittadinanza.",
+      },
+    ],
+    hooks: [
+      "Granito, palme e acqua così trasparente da sembrare irreale.",
+      "Le Seychelles sono il paradiso di rocce scolpite dall'oceano.",
+    ],
+  },
+
+  mauritius: {
+    kind: "sea",
+    tips: [
+      "Le Morne Brabant è la montagna simbolo: la laguna sottostante è un colore da cartolina.",
+      "Belle Mare e la costa est hanno sabbia fine e acque calme quasi tutto l'anno.",
+      "Le cascate di Chamarel e le Terre dei Sette Colori sono una tappa interna sorprendente.",
+    ],
+    stops: [
+      "Le Morne Brabant",
+      "La spiaggia di Belle Mare",
+      "Le cascate di Chamarel",
+      "L'isola dei Cervi",
+    ],
+    faqs: [
+      {
+        question: "Mauritius è solo mare?",
+        answer:
+          "No: l'interno è verde con cascate e parchi; il mare è la star ma l'isola ha anche montagne e natura.",
+      },
+      {
+        question: "Quando andare a Mauritius?",
+        answer:
+          "Da maggio a dicembre il clima è più gradevole; gennaio-aprile è più caldo e umido (stagione dei cicloni).",
+      },
+      {
+        question: "Mauritius è cara?",
+        answer:
+          "Dipende dagli hotel: i resort sono cari, le guesthouse e i villaggi rendono il soggiorno accessibile.",
+      },
+    ],
+    hooks: [
+      "Sabbia bianca, laguna turchese e una montagna che domina l'orizzonte.",
+      "Mauritius è l'isola dove ogni spiaggia è una cartolina diversa.",
+    ],
+  },
+
+  cancun: {
+    kind: "sea",
+    tips: [
+      "La Zona Hotelera è la striscia di resort e mare turchese: per spiagge più calme puntate su Isla Mujeres.",
+      "Le rovine maya di Tulum sul mare sono una tappa culturale da non perdere.",
+      "I cenotes (Dos Ojos, Gran Cenote) sono pozzi d'acqua dolce unici: nuotare in uno è un'esperienza.",
+    ],
+    stops: [
+      "La Zona Hotelera",
+      "Isla Mujeres",
+      "Le rovine di Tulum",
+      "Il Cenote Dos Ojos",
+    ],
+    faqs: [
+      {
+        question: "Cancún è solo resort?",
+        answer:
+          "No: cultura maya (Tulum, Chichén Itzá), cenotes e isole (Isla Mujeres, Cozumel) rendono la zona ricca.",
+      },
+      {
+        question: "Quando andare a Cancún?",
+        answer:
+          "Da dicembre ad aprile è asciutto e ideale; l'estate è calda e può piovere (stagione degli uragani giu-nov).",
+      },
+      {
+        question: "Serve il visto per il Messico?",
+        answer:
+          "Per molti Paesi niente visto turistico; verificate i requisiti attuali prima di partire.",
+      },
+    ],
+    hooks: [
+      "Acqua turchese, rovine maya e cenotes da sogno.",
+      "Cancún è il Caribe messicano, tra mare e storia millenaria.",
+    ],
+  },
+
+  cuba: {
+    kind: "sea",
+    tips: [
+      "L'Avana Vecchia è un museo a cielo aperto: le auto d'epoca e i colori sono l'immagine di Cuba.",
+      "Varadero è la spiaggia più famosa, lunga e di sabbia chiara; Trinidad e la sua architettura coloniale sono imperdibili.",
+      "Viñales è la valle del tabacco: verdi mogotes e aria di altri tempi.",
+    ],
+    stops: [
+      "L'Avana Vecchia",
+      "Varadero e le sue spiagge",
+      "Trinidad e le case coloniali",
+      "Le valli di Viñales",
+    ],
+    faqs: [
+      {
+        question: "Cuba è sicura?",
+        answer:
+          "Sì per i turisti, è tra i Paesi più sicuri dei Caraibi. Attenzione alle norme locali e alla valuta.",
+      },
+      {
+        question: "Quando andare a Cuba?",
+        answer:
+          "Da novembre ad aprile è la stagione asciutta e migliore; l'estate è calda e umida (uragani giu-nov).",
+      },
+      {
+        question: "Cuba si visita senza tour?",
+        answer:
+          "Sì, con i casas particulares e i trasporti locali, ma la pianificazione è più complessa che altrove.",
+      },
+    ],
+    hooks: [
+      "Auto d'epoca, musica e colori: Cuba non assomiglia a nessun altro posto.",
+      "L'isola dove il tempo sembra essersi fermato agli anni Cinquanta.",
+    ],
+  },
+
+  "repubblica dominicana": {
+    kind: "sea",
+    tips: [
+      "Punta Cana è il litorale di resort sulla sabbia bianca; la penisola di Samaná ha paesaggi più selvaggi.",
+      "Santo Domingo e la Zona Colonial sono il cuore storico, patrimonio UNESCO.",
+      "L'isola di Saona è la gita classica: spiagge da cartolina e palme sul mare.",
+    ],
+    stops: [
+      "Punta Cana e le spiagge",
+      "La penisola di Samaná",
+      "Santo Domingo e la Zona Colonial",
+      "L'isola di Saona",
+    ],
+    faqs: [
+      {
+        question: "Repubblica Dominicana o Messico?",
+        answer:
+          "La Repubblica Dominicana è più concentrata su spiagge e resort; il Messico offre anche cultura maya. Dipende dal tipo di vacanza.",
+      },
+      {
+        question: "Quando andare?",
+        answer:
+          "Da dicembre ad aprile è asciutto; l'estate è più umida (stagione degli uragani).",
+      },
+      {
+        question: "Serve il visto?",
+        answer:
+          "Per molti Paesi niente visto turistico; verificate prima di partire.",
+      },
+    ],
+    hooks: [
+      "Sabbia bianca e palme all'infinito: il classico paradiso caraibico.",
+      "La Repubblica Dominicana è mare cristallino e storia coloniale.",
+    ],
+  },
+
+  canarie: {
+    kind: "sea",
+    tips: [
+      "Il Teide a Tenerife è la vetta più alta di Spagna: il paesaggio lunare è un'escursione imperdibile.",
+      "Le dune di Maspalomas a Gran Canaria sembrano un deserto accanto all'oceano.",
+      "Fuerteventura e Lanzarote hanno le spiagge più lunghe e l'acqua più calma dell'arcipelago.",
+    ],
+    stops: [
+      "Il Teide a Tenerife",
+      "Le dune di Maspalomas",
+      "Le spiagge di Fuerteventura",
+      "L'isola di Lanzarote",
+    ],
+    faqs: [
+      {
+        question: "Le Canarie in estate sono troppo calde?",
+        answer:
+          "Il clima è mite tutto l'anno: l'estate è piacevole grazie ai venti alisei, mai afosa come il continente.",
+      },
+      {
+        question: "Quando andare alle Canarie?",
+        answer:
+          "Tutto l'anno è buono; l'inverno europeo è il periodo più gettonato per sfuggire al freddo.",
+      },
+      {
+        question: "Quale isola scegliere?",
+        answer:
+          "Tenerife per natura e Teide, Gran Canaria per le dune, Fuerteventura e Lanzarote per le spiagge e il surf.",
+      },
+    ],
+    hooks: [
+      "Vulcani, dune e oceano: le Canarie sono l'Africa che incontra l'Europa.",
+      "Primavera eterna e spiagge lunghe: l'arcipelago del buon clima.",
+    ],
+  },
+
+  "sharm el sheikh": {
+    kind: "sea",
+    tips: [
+      "Ras Mohammed e la barriera corallina sono tra i migliori fondali del mondo per lo snorkeling.",
+      "Naama Bay è il cuore turistico; per spiagge più quiete cercate le baie fuori dal centro.",
+      "Il deserto del Sinai offre gite in quad, cammello e la salita al monte Mosè all'alba.",
+    ],
+    stops: [
+      "La barriera corallina e Ras Mohammed",
+      "Naama Bay e il lungomare",
+      "Le spiagge del Mar Rosso",
+      "Il deserto del Sinai",
+    ],
+    faqs: [
+      {
+        question: "Sharm è adatta anche a chi non si immerge?",
+        answer:
+          "Sì: lo snorkeling dalla riva è spettacolare anche per principianti, e le spiagge sono attrezzate.",
+      },
+      {
+        question: "Quando andare a Sharm?",
+        answer:
+          "Da ottobre a maggio è il periodo migliore; l'estate è torrida ma l'acqua resta fresca.",
+      },
+      {
+        question: "Serve il visto per l'Egitto?",
+        answer:
+          "Sì, per molti Paesi il visto si ottiene all'arrivo; verificate i requisiti aggiornati prima di partire.",
+      },
+    ],
+    hooks: [
+      "Coralli a portata di maschera e un mare che sfuma in ogni blu.",
+      "Sharm è il Mar Rosso nella sua forma più spettacolare.",
+    ],
+  },
+
+  cipro: {
+    kind: "sea",
+    tips: [
+      "Ayia Napa ha le spiagge più note e l'acqua più limpida; Protaras è l'alternativa più tranquilla.",
+      "Paphos mescola mare e storia: i mosaici romani sono patrimonio UNESCO.",
+      "L'isola è divisa: la parte sud è quella turistica, con Nicosia come confine suggestivo.",
+    ],
+    stops: [
+      "Ayia Napa e le sue spiagge",
+      "Paphos e i mosaici",
+      "Le spiagge di Protaras",
+      "Il sito di Kourion",
+    ],
+    faqs: [
+      {
+        question: "Cipro è cara?",
+        answer:
+          "Nella media mediterranea: mangiare e spostarsi costano meno che in gran parte d'Europa occidentale.",
+      },
+      {
+        question: "Quando andare a Cipro?",
+        answer:
+          "Da maggio a ottobre per il mare; l'inverno è mite ma con più pioggia.",
+      },
+      {
+        question: "Si guida a sinistra?",
+        answer:
+          "Sì, a Cipro si guida a sinistra, retaggio inglese: attenzione soprattutto nei primi giorni.",
+      },
+    ],
+    hooks: [
+      "L'isola di Afrodite, tra spiagge dorate e rovine romane.",
+      "Cipro è il Mediterraneo in una versione soleggiata e ricca di storia.",
     ],
   },
 };
@@ -840,15 +2027,7 @@ const KNOWLEDGE: Record<string, DestinationKnowledge> = {
  * la forma breve di un nome non resta senza conoscenza.
  */
 const ALIASES: Record<string, string> = {
-  elba: "isola d'elba",
-  "isola elba": "isola d'elba",
-  // L'apostrofo: `normalizeForMatch` lo conserva, quindi un nome con
-  // "d'Elba" va dichiarato anche nella forma senza, che è quella che arriva
-  // quando la destinazione viene digitata o ripulita.
-  "isola d elba": "isola d'elba",
   maiorca: "mallorca",
-  menorca: "mallorca",
-  "isola di menorca": "mallorca",
   candia: "creta",
   // La chiave è normalizzata come il nome che arriva: `normalizeForMatch`
   // toglie maiuscole e diacritici, quindi anche le chiavi degli alias vanno
@@ -860,9 +2039,6 @@ const ALIASES: Record<string, string> = {
   corfu: "corfù",
   kerkyra: "corfù",
   thira: "santorini",
-  positano: "costiera amalfitana",
-  amalfi: "costiera amalfitana",
-  amalfiti: "costiera amalfitana",
   "valle d'itria": "puglia",
   trulli: "puglia",
   egadi: "sicilia",
@@ -870,15 +2046,32 @@ const ALIASES: Record<string, string> = {
   "isole eolie": "sicilia",
   palermo: "sicilia",
   catania: "sicilia",
-  napoli: "sicilia",
   marrakech: "marocco",
   marrakesh: "marocco",
-  tunisi: "marocco",
   nyc: "new york",
   "nuova york": "new york",
   newyork: "new york",
   paris: "parigi",
   london: "londra",
+  italy: "italia",
+  barcelona: "barcellona",
+  lisbon: "lisbona",
+  lisboa: "lisbona",
+  athens: "atene",
+  berlin: "berlino",
+  prague: "praga",
+  copenhagen: "copenaghen",
+  dublin: "dublino",
+  hongkong: "hong kong",
+  "cancún": "cancun",
+  varadero: "cuba",
+  "punta cana": "repubblica dominicana",
+  "dominican republic": "repubblica dominicana",
+  tenerife: "canarie",
+  "canary islands": "canarie",
+  sharm: "sharm el sheikh",
+  "sharm el-sheikh": "sharm el sheikh",
+  cyprus: "cipro",
 };
 
 /**
@@ -922,6 +2115,67 @@ export function hasCuratedKnowledge(place: string): boolean {
 }
 
 /**
+ * Nomi dei luoghi più riconoscibili di una destinazione, estratti dalle tappe
+ * curate. Servono alla ricerca di clip video stock: cercare solo il nome della
+ * destinazione restituisce anche riprese anonime (strade qualsiasi), mentre i
+ * luoghi iconici ("Central Park", "Times Square") restituiscono riprese
+ * identificabili. Ogni tappa nomina il luogo principale prima della
+ * congiunzione o della virgola.
+ *
+ * Una destinazione SENZA conoscenza curata restituisce `[]`: il chiamante usa
+ * il solo nome della destinazione, comportamento precedente immutato.
+ */
+export function landmarkQueries(place: string, max = 4): string[] {
+  const knowledge = knowledgeFor(place);
+  if (!knowledge) return [];
+  const out: string[] = [];
+  for (const stop of knowledge.stops) {
+    // Il luogo principale è la parte prima della prima congiunzione/virgola.
+    const lead = (stop.split(/,\s*|\s+e\s+|\s*:\s*/i)[0] ?? "").trim();
+    const cleaned = lead
+      .replace(/^(il|la|lo|l'|le|i|gli|un|una)\s+/i, "")
+      .trim();
+    if (cleaned.length >= 3 && !/^\d+$/.test(cleaned)) {
+      const lower = cleaned.toLowerCase();
+      if (!out.some((q) => q.toLowerCase() === lower)) out.push(cleaned);
+    }
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function tokensOf(text: string, minLen = 3): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((t) => t.length >= minLen);
+}
+
+/**
+ * Token "attesi" di una destinazione: il nome (anche nelle forme alias, es.
+ * "barcelona" oltre a "barcellona", perché i titoli stock sono spesso in
+ * inglese) e i luoghi delle tappe. Servono al filtro di pertinenza delle clip:
+ * un titolo che non contiene NESSUNO di questi token è quasi certamente rumore
+ * (strade, scarpe, case generiche) e va scartato.
+ */
+export function relevantPlaceTokens(place: string): string[] {
+  const key = normalizeForMatch(place ?? "");
+  const out = new Set<string>();
+  for (const t of tokensOf(key)) out.add(t);
+  const resolved = ALIASES[key] ?? key;
+  for (const t of tokensOf(resolved)) out.add(t);
+  // Tutte le forme alias che puntano alla stessa voce ("barcelona" → "barcellona").
+  for (const [alias, target] of Object.entries(ALIASES)) {
+    if (target === resolved) for (const t of tokensOf(alias)) out.add(t);
+  }
+  const knowledge = KNOWLEDGE[resolved];
+  if (knowledge) {
+    for (const stop of knowledge.stops) for (const t of tokensOf(stop)) out.add(t);
+  }
+  return [...out];
+}
+
+/**
  * Le destinazioni con una conoscenza curata.
  *
  * Serve ai test e al debug: permette di verificare la tabella intera senza
@@ -929,6 +2183,118 @@ export function hasCuratedKnowledge(place: string): boolean {
  * l'utente: la conoscenza si sceglie per nome, e un elenco a schermo
  * suggerirebbe che gli altri posti non si possono scrivere.
  */
+/**
+ * Query di ricerca video stock IN INGLESE per ogni destinazione curata.
+ *
+ * I provider stock (Pexels, Pixabay, Magnific) indicizzano in inglese: la query
+ * in italiano ("atene Acropoli", "amsterdam Canali") non trova quasi nulla,
+ * mentre quella inglese ("athens acropolis", "amsterdam canals") restituisce
+ * riprese vere e specifiche del luogo. `name` è il nome inglese per il filtro
+ * di pertinenza + la query di riempimento col solo nome; `landmarks` sono le
+ * tappe per la varietà del montaggio.
+ */
+export const VIDEO_SEARCH: Record<string, { name: string; landmarks: string[] }> = {
+  // --- Città ---
+  amsterdam: { name: "amsterdam", landmarks: ["amsterdam canals", "rijksmuseum amsterdam", "jordaan amsterdam", "zaanse schans windmills"] },
+  atene: { name: "athens", landmarks: ["athens acropolis", "parthenon athens", "plaka athens", "temple of olympian zeus athens"] },
+  barcellona: { name: "barcelona", landmarks: ["sagrada familia barcelona", "park guell barcelona", "las ramblas barcelona", "barceloneta beach barcelona"] },
+  bangkok: { name: "bangkok", landmarks: ["grand palace bangkok", "wat arun bangkok", "bangkok floating market", "wat pho reclining buddha bangkok"] },
+  berlino: { name: "berlin", landmarks: ["brandenburg gate berlin", "berlin museum island", "reichstag berlin", "east side gallery berlin"] },
+  budapest: { name: "budapest", landmarks: ["budapest parliament danube", "fishermans bastion budapest", "szechenyi thermal bath", "chain bridge budapest"] },
+  copenaghen: { name: "copenhagen", landmarks: ["copenhagen tivoli gardens", "nyhavn copenhagen", "little mermaid copenhagen", "christiania copenhagen"] },
+  dubai: { name: "dubai", landmarks: ["burj khalifa dubai", "dubai marina", "burj al arab dubai", "dubai desert safari"] },
+  dublino: { name: "dublin", landmarks: ["trinity college dublin", "temple bar dublin", "guinness storehouse dublin", "dublin castle"] },
+  "hong kong": { name: "hong kong", landmarks: ["victoria peak hong kong", "victoria harbour hong kong", "hong kong street market", "hong kong skyline"] },
+  istanbul: { name: "istanbul", landmarks: ["hagia sophia istanbul", "blue mosque istanbul", "bosphorus istanbul", "grand bazaar istanbul"] },
+  kyoto: { name: "kyoto", landmarks: ["fushimi inari shrine kyoto", "kinkakuji golden pavilion kyoto", "arashiyama bamboo grove", "gion geisha district kyoto"] },
+  lisbona: { name: "lisbon", landmarks: ["belem tower lisbon", "alfama lisbon", "santa justa lift lisbon", "sintra palacio da pena"] },
+  londra: { name: "london", landmarks: ["big ben london", "tower bridge london", "london eye", "buckingham palace london"] },
+  "los angeles": { name: "los angeles", landmarks: ["hollywood sign los angeles", "santa monica pier", "griffith observatory los angeles", "venice beach los angeles"] },
+  madrid: { name: "madrid", landmarks: ["prado museum madrid", "royal palace madrid", "plaza mayor madrid", "retiro park madrid"] },
+  "new york": { name: "new york", landmarks: ["times square new york", "central park new york", "statue of liberty new york", "brooklyn bridge new york"] },
+  parigi: { name: "paris", landmarks: ["eiffel tower paris", "louvre museum paris", "notre dame paris", "arc de triomphe paris"] },
+  praga: { name: "prague", landmarks: ["charles bridge prague", "prague castle", "old town square prague", "prague astronomical clock"] },
+  seoul: { name: "seoul", landmarks: ["gyeongbokgung palace seoul", "n seoul tower", "bukchon hanok village seoul", "myeongdong seoul"] },
+  singapore: { name: "singapore", landmarks: ["marina bay sands singapore", "gardens by the bay singapore", "merlion singapore", "chinatown singapore"] },
+  sydney: { name: "sydney", landmarks: ["sydney opera house", "sydney harbour bridge", "bondi beach sydney", "royal botanic garden sydney"] },
+  tokyo: { name: "tokyo", landmarks: ["shibuya crossing tokyo", "sensoji temple asakusa tokyo", "meiji shrine tokyo", "tokyo tower"] },
+  vienna: { name: "vienna", landmarks: ["schonbrunn palace vienna", "st stephens cathedral vienna", "belvedere palace vienna", "vienna opera"] },
+
+  // --- Mare e isole ---
+  bali: { name: "bali", landmarks: ["bali rice terraces", "uluwatu temple bali", "bali beach", "bali waterfall"] },
+  canarie: { name: "canary islands", landmarks: ["tenerife teide volcano", "maspalomas dunes gran canaria", "fuerteventura beach", "lanzarote volcanic landscape"] },
+  cancun: { name: "cancun", landmarks: ["cancun beach", "isla mujeres cancun", "tulum mayan ruins", "cenote mexico"] },
+  cipro: { name: "cyprus", landmarks: ["ayia napa beach cyprus", "paphos cyprus mosaics", "protaras beach cyprus", "cyprus mediterranean sea"] },
+  corfù: { name: "corfu", landmarks: ["corfu old town", "corfu beach", "paleokastritsa corfu", "corfu canal damour"] },
+  creta: { name: "crete", landmarks: ["elafonissi beach crete", "balos lagoon crete", "chania old town crete", "matala beach crete"] },
+  cuba: { name: "cuba", landmarks: ["havana old town cuba", "varadero beach cuba", "trinidad cuba", "vinales valley cuba"] },
+  formentera: { name: "formentera", landmarks: ["formentera beach", "ses salines formentera", "formentera cove", "formentera sunset"] },
+  ibiza: { name: "ibiza", landmarks: ["ibiza beach turquoise water", "dalt vila ibiza", "ibiza cove", "ibiza sunset"] },
+  kenya: { name: "kenya", landmarks: ["diani beach kenya", "watamu kenya beach", "mombasa kenya", "kenya coast"] },
+  mallorca: { name: "mallorca", landmarks: ["palma cathedral mallorca", "soller mallorca", "cala mallorca beach", "serra de tramuntana mallorca"] },
+  maldive: { name: "maldives", landmarks: ["maldives beach", "maldives overwater villa", "maldives atoll", "maldives snorkeling"] },
+  mauritius: { name: "mauritius", landmarks: ["mauritius beach palm trees", "le morne brabant mauritius", "ile aux cerfs mauritius", "chamarel waterfall mauritius"] },
+  miami: { name: "miami", landmarks: ["miami south beach", "ocean drive miami", "wynwood walls miami", "little havana miami"] },
+  mykonos: { name: "mykonos", landmarks: ["mykonos windmills", "mykonos little venice", "mykonos beach", "mykonos town white houses"] },
+  "repubblica dominicana": { name: "dominican republic", landmarks: ["punta cana beach", "samana peninsula dominican republic", "santo domingo colonial zone", "saona island dominican republic"] },
+  rodi: { name: "rhodes", landmarks: ["rhodes old town", "rhodes beach", "lindos acropolis rhodes", "rhodes harbor"] },
+  santorini: { name: "santorini", landmarks: ["santorini oia sunset", "santorini caldera", "santorini blue domes", "santorini black beach"] },
+  seychelles: { name: "seychelles", landmarks: ["anse source dargent seychelles", "praslin island seychelles", "vallee de mai seychelles", "mahe beach seychelles"] },
+  "sharm el sheikh": { name: "sharm el sheikh", landmarks: ["sharm el sheikh coral reef", "naama bay sharm el sheikh", "red sea snorkeling sharm", "sinai desert"] },
+  thailandia: { name: "thailand", landmarks: ["phuket beach thailand", "krabi islands thailand", "phi phi islands thailand", "thailand longtail boat"] },
+  zanzibar: { name: "zanzibar", landmarks: ["zanzibar beach white sand palm trees", "zanzibar stone town", "zanzibar kendwa beach", "zanzibar dhow sunset"] },
+
+  // --- Italia (solo mare del Sud) ---
+  calabria: { name: "calabria", landmarks: ["tropea beach calabria", "capo vaticano calabria", "costa degli dei italy", "calabria sea coast"] },
+  puglia: { name: "puglia", landmarks: ["salento puglia beach", "alberobello trulli", "polignano a mare puglia", "otranto puglia sea"] },
+  sardegna: { name: "sardinia", landmarks: ["costa smeralda sardinia", "sardinia beach", "golfo di orosei sardinia", "sardinia cala"] },
+  sicilia: { name: "sicily", landmarks: ["taormina sicily", "san vito lo capo sicily", "ortigia syracuse sicily", "etna volcano sicily"] },
+  italia: { name: "italy", landmarks: ["calabria sea italy", "sicily sea italy", "puglia sea italy", "sardinia sea italy"] },
+
+  // --- Altre ---
+  marocco: { name: "morocco", landmarks: ["marrakech morocco", "morocco sahara desert", "chefchaouen morocco", "essaouira morocco coast"] },
+  malta: { name: "malta", landmarks: ["malta valletta", "mdina malta", "malta gozo", "malta blue lagoon"] },
+};
+
+/** Query video stock in inglese per una destinazione, o `null` se non mappata. */
+export function videoSearch(place: string): { name: string; landmarks: string[] } | null {
+  const key = normalizeForMatch(place ?? "");
+  if (!key) return null;
+  const resolved = ALIASES[key] ?? key;
+  return VIDEO_SEARCH[resolved] ?? null;
+}
+
+const CURATED_SLUG_OVERRIDES: Record<string, string> = {
+  italia: "mare_italia",
+  calabria: "mare_italia",
+  sicilia: "mare_italia",
+  puglia: "mare_italia",
+  sardegna: "mare_italia",
+  // Il nome leggibile della cartella unica del Sud Italia risolve a sé stesso.
+  "mare italia": "mare_italia",
+};
+
+/**
+ * Slug della cartella `public/curated/<photos|videos>` per una destinazione.
+ *
+ * Le cartelle "curate" sono riempite a mano dall'utente (foto e clip video
+ * selezionati per destinazione): il loro nome è il nome normalizzato del luogo
+ * con gli spazi trasformati in underscore ("new_york", "sharm_el_sheikh").
+ * L'Italia in tutte le sue forme (Italia, Calabria, Sicilia, Puglia, Sardegna)
+ * vive in UN'UNICA cartella `mare_italia`, perché vendiamo solo il mare del Sud
+ * come unico prodotto. Una destinazione NON curata restituisce `null`: il
+ * chiamante ricade sulla ricerca stock del provider.
+ */
+export function curatedFolderSlug(place: string): string | null {
+  const key = normalizeForMatch(place ?? "");
+  if (!key) return null;
+  const resolved = ALIASES[key] ?? key;
+  const override = CURATED_SLUG_OVERRIDES[resolved];
+  if (override) return override;
+  if (!VIDEO_SEARCH[resolved]) return null;
+  return normalizeForMatch(resolved).replace(/\s+/g, "_");
+}
+
 export function curatedDestinations(): string[] {
   return Object.keys(KNOWLEDGE).sort();
 }

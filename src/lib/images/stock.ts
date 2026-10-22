@@ -34,7 +34,15 @@ const DOWNLOAD_TIMEOUT_MS = 60_000;
  * Sono i CDN dichiarati nelle risposte Magnific/Freepik: nessun URL arbitrario
  * proveniente da una risposta non verificata entra nel processo.
  */
-const ALLOWED_STOCK_HOSTS = ["img.freepik.com", "downloadscdn7.freepik.com", "freepik.com"];
+const ALLOWED_STOCK_HOSTS = [
+  "img.freepik.com",
+  "downloadscdn7.freepik.com",
+  "freepik.com",
+  // I CDN di download dei resource Magnific non sono stabili da documentare a
+  // priori (downloadscdn6/7/… .magnific.com): il suffisso copre tutte le
+  // varianti. È lo stesso host su cui risponde l'endpoint /download ufficiale.
+  "magnific.com",
+];
 
 function isAllowedStockUrl(raw: string): boolean {
   let parsed: URL;
@@ -81,6 +89,12 @@ export interface StockProvider {
    * immagine utilizzabile: mai un'eccezione, mai un'immagine finta.
    */
   searchImage(request: StockSearchRequest): Promise<StockImage | null>;
+  /**
+   * Cerca fino a `limit` immagini stock reali, una per resource. Opzionale:
+   * serve alla pipeline video per raccogliere fotografie DISTINTE della
+   * destinazione. Chi non lo implementa mantiene il solo `searchImage`.
+   */
+  searchImages?(request: StockSearchRequest): Promise<StockImage[]>;
 }
 
 async function parseJson(res: Response): Promise<Record<string, unknown> | null> {
@@ -161,13 +175,19 @@ export class MagnificStockProvider implements StockProvider {
   }
 
   async searchImage(request: StockSearchRequest): Promise<StockImage | null> {
-    const query = request.query.trim();
-    if (!query || !this.apiKey) return null;
+    const images = await this.searchImages({ ...request, limit: 1 });
+    return images[0] ?? null;
+  }
 
+  async searchImages(request: StockSearchRequest): Promise<StockImage[]> {
+    const query = request.query.trim();
+    if (!query || !this.apiKey) return [];
+
+    const limit = Math.max(1, Math.min(request.limit ?? 6, 20));
     const params = new URLSearchParams();
     params.set("term", query.slice(0, MAX_QUERY_LENGTH));
     params.set("order", "relevance");
-    params.set("limit", String(Math.max(1, Math.min(request.limit ?? 6, 20))));
+    params.set("limit", String(limit));
     params.set("filters[content_type][photo]", "1");
     params.set("filters[ai-generated][excluded]", "1");
     if (request.orientation) {
@@ -190,17 +210,20 @@ export class MagnificStockProvider implements StockProvider {
       clearTimeout(timer);
       if (!res.ok) {
         logAIError("stock.search", { status: res.status, query }, new Error("risposta stock non valida"));
-        return null;
+        return [];
       }
       const body = await parseJson(res);
       const data = body?.data;
       items = Array.isArray(data) ? data : [];
     } catch (e) {
       logAIError("stock.search", { reason: "network", query }, e);
-      return null;
+      return [];
     }
 
+    const results: StockImage[] = [];
+    const seenSourceUrls = new Set<string>();
     for (const item of items) {
+      if (results.length >= limit) break;
       if (!item || typeof item !== "object" || Array.isArray(item)) continue;
       const record = item as Record<string, unknown>;
       const image =
@@ -228,9 +251,11 @@ export class MagnificStockProvider implements StockProvider {
 
       for (const candidate of candidates) {
         if (!isAllowedStockUrl(candidate)) continue;
+        if (seenSourceUrls.has(candidate)) continue;
         const downloaded = await downloadStockImage(candidate, this.apiKey);
         if (!downloaded) continue;
-        return {
+        seenSourceUrls.add(candidate);
+        results.push({
           buffer: downloaded.buffer,
           mimeType: downloaded.mimeType,
           filename: filenameFromUrl(candidate, `stock-${resourceId ?? "immagine"}.jpg`),
@@ -239,11 +264,12 @@ export class MagnificStockProvider implements StockProvider {
           resourceId,
           title,
           provider: this.name,
-        };
+        });
+        break;
       }
     }
 
-    return null;
+    return results;
   }
 
   /**
@@ -259,7 +285,7 @@ export class MagnificStockProvider implements StockProvider {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
     try {
-      const res = await fetch(`${DOWNLOAD_ENDPOINT}/${resourceId}/download?image_size=2000px`, {
+      const res = await fetch(`${DOWNLOAD_ENDPOINT}/${resourceId}/download`, {
         headers,
         signal: controller.signal,
       });

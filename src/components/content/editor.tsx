@@ -11,19 +11,14 @@ import {
   Copy,
   Check,
   X,
-  CalendarClock,
   Image as ImageIcon,
   RotateCcw,
-  Rocket,
 } from "lucide-react";
 import {
   updateContentAction,
   deleteContentAction,
   duplicateContentAction,
   setStatusAction,
-  scheduleAction,
-  unscheduleAction,
-  publishAction,
 } from "@/lib/actions/content";
 import { PLATFORM_LABELS, TYPE_OPTIONS } from "@/lib/status";
 import {
@@ -37,7 +32,6 @@ import {
   StatusBadge,
   TypeBadge,
   Badge,
-  toDateTimeLocal,
   PLATFORM_VALUES,
 } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
@@ -108,14 +102,6 @@ export function ContentEditor({
   const [platforms, setPlatforms] = useState<Set<string>>(
     new Set(content.platforms.map((p) => p.platform))
   );
-  const [scheduledDate, setScheduledDate] = useState(
-    content.scheduledDate
-      ? toDateTimeLocal(new Date(content.scheduledDate))
-      : ""
-  );
-
-  const [showSchedule, setShowSchedule] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
@@ -125,10 +111,6 @@ export function ContentEditor({
   // non va ricalcolato qui sull'array `approvals`, che non è completo.
   const canApprove = content.status === "DRAFT";
   const canReject = content.status === "DRAFT";
-  const canSchedule = content.status === "APPROVED";
-  const canPublish =
-    ["APPROVED", "SCHEDULED"].includes(content.status) && hasExplicitApproval;
-  const canUnschedule = content.status === "SCHEDULED";
   const canRestoreDraft = ["REJECTED", "FAILED"].includes(content.status);
 
   /**
@@ -136,8 +118,8 @@ export function ContentEditor({
    * a Instagram ma non ha media, il publish viene bloccato in UI con un
    * warning chiaro invece di far fallire la pubblicazione lato server.
    */
-  const instagramWithoutMedia = platforms.has("INSTAGRAM") && content.assets.length === 0;
-  const publishable = !instagramWithoutMedia;
+  // I campi restano modificabili in ogni stato tranne PUBLISHED (già pubblicato).
+  const locked = content.status === "PUBLISHED";
 
   const togglePlatform = (p: string) => {
     setPlatforms((prev) => {
@@ -162,11 +144,6 @@ export function ContentEditor({
     setHashtags(content.hashtags ?? "");
     setType(content.type);
     setPlatforms(new Set(content.platforms.map((p) => p.platform)));
-    setScheduledDate(
-      content.scheduledDate
-        ? toDateTimeLocal(new Date(content.scheduledDate))
-        : ""
-    );
     setActionError(null);
     setActionMessage(null);
   };
@@ -181,10 +158,7 @@ export function ContentEditor({
    * `pending` restava true per sempre e i pulsanti del flusso di lavoro
    * (inclusi "Approva" e "Rifiuta") rimanevano disabilitati senza fine.
    */
-  const afterAction = () => {
-    setEditing(false);
-    setShowSchedule(false);
-  };
+  const afterAction = () => {};
 
   /**
    * Esegue un'action del server gestendo gli esiti in modo visibile:
@@ -215,8 +189,9 @@ export function ContentEditor({
     }
   };
 
-  const save = () =>
-    startTransition(async () => {
+  /** Persiste i campi correnti; ritorna false se il salvataggio fallisce. */
+  const persistForm = async (): Promise<boolean> => {
+    try {
       const payload: {
         id: string;
         title: string | null;
@@ -224,7 +199,6 @@ export function ContentEditor({
         hashtags: string | null;
         type: string;
         platforms: string[];
-        scheduledDate: string | null;
       } = {
         id: content.id,
         title: title.trim() || null,
@@ -232,38 +206,30 @@ export function ContentEditor({
         hashtags: hashtags.trim() || null,
         type,
         platforms: [...platforms],
-        scheduledDate: scheduledDate
-          ? new Date(scheduledDate).toISOString()
-          : null,
       };
-      await runAction(() => updateContentAction(payload));
+      const res = await updateContentAction(payload);
+      if (res && res.ok === false) {
+        setActionError(res.message ?? "Salvataggio non riuscito.");
+        return false;
+      }
+      return true;
+    } catch (e) {
+      setActionError(
+        e instanceof Error && e.message ? e.message : "Salvataggio non riuscito."
+      );
+      return false;
+    }
+  };
+
+  const save = () =>
+    startTransition(async () => {
+      const ok = await persistForm();
+      if (ok) afterAction();
     });
 
   const doSetDraft = () =>
     startTransition(async () => {
       await runAction(() => setStatusAction(content.id, "DRAFT"));
-    });
-
-  const doSchedule = () =>
-    startTransition(async () => {
-      const d = new Date(scheduledDate);
-      if (!scheduledDate || Number.isNaN(d.getTime())) {
-        setActionError("Seleziona una data e ora valide per la programmazione.");
-        return;
-      }
-      await runAction(() => scheduleAction(content.id, d.toISOString()));
-    });
-
-  const doUnschedule = () =>
-    startTransition(async () => {
-      await runAction(() => unscheduleAction(content.id));
-    });
-
-  const doPublish = (platform?: string) =>
-    startTransition(async () => {
-      await runAction(() => publishAction(content.id, platform), {
-        refreshOnError: true,
-      });
     });
 
   const doDuplicate = () =>
@@ -284,7 +250,7 @@ export function ContentEditor({
         setActionError(res.message ?? "Eliminazione non riuscita.");
         return;
       }
-      router.push("/contents");
+      router.push("/planning");
     });
 
   const previewBody = (hashtags ? `${caption}\n\n${hashtags}` : caption).trim();
@@ -294,10 +260,10 @@ export function ContentEditor({
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link
-            href="/contents"
+            href="/planning"
             className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> Tutti i contenuti
+            <ArrowLeft className="h-3.5 w-3.5" /> Torna alla pianificazione
           </Link>
           <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900">
             <TypeBadge type={content.type} />
@@ -305,13 +271,7 @@ export function ContentEditor({
             <StatusBadge status={content.status} />
           </h1>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {content.status === "PUBLISHED" ? null : (
-            <Button variant="secondary" size="sm" onClick={() => setEditing(true)} disabled={pending}>
-              <Save className="h-4 w-4" /> Modifica
-            </Button>
-          )}
-        </div>
+
       </div>
 
       {actionError && (
@@ -340,7 +300,7 @@ export function ContentEditor({
                 <Input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  readOnly={!editing}
+                  readOnly={locked}
                   placeholder="Titolo breve del post…"
                 />
               </Field>
@@ -349,7 +309,7 @@ export function ContentEditor({
                 <Select
                   value={type}
                   onChange={(e) => setType(e.target.value)}
-                  disabled={!editing}
+                  disabled={locked}
                 >
                   {TYPE_OPTIONS.map((t) => (
                     <option key={t.value} value={t.value}>
@@ -360,25 +320,15 @@ export function ContentEditor({
               </Field>
 
               <Field
-                label="Caption"
-                hint={`${caption.length} caratteri`}
+                label="Testo (caption)"
+                hint={`${caption.length} caratteri · includi qui anche eventuali hashtag`}
               >
                 <Textarea
                   rows={6}
                   value={caption}
                   onChange={(e) => setCaption(e.target.value)}
-                  readOnly={!editing}
+                  readOnly={locked}
                   placeholder="Testo da pubblicare sulla piattaforma…"
-                />
-              </Field>
-
-              <Field label="Hashtag" hint="Separati da spazio (es. #grecia #mare)">
-                <Textarea
-                  rows={2}
-                  value={hashtags}
-                  onChange={(e) => setHashtags(e.target.value)}
-                  readOnly={!editing}
-                  placeholder="#viaggi #estate…"
                 />
               </Field>
 
@@ -390,7 +340,7 @@ export function ContentEditor({
                       <button
                         key={p}
                         type="button"
-                        disabled={!editing}
+                        disabled={locked}
                         onClick={() => togglePlatform(p)}
                         className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
                           selected
@@ -410,31 +360,23 @@ export function ContentEditor({
                 </div>
               </Field>
 
-              {/* Azioni visibili solo in modifica: fuori dalla modifica
-                  "Annulla" non avrebbe nulla da annullare e "Salva" sarebbe
-                  un pulsante permanentemente disabilitato senza spiegazione. */}
-              {editing ? (
-                <div className="flex items-center gap-2 border-t border-slate-100 pt-4">
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      resetForm();
-                      setEditing(false);
-                    }}
-                    disabled={pending}
-                  >
-                    Annulla
-                  </Button>
-                  <Button onClick={save} disabled={pending}>
-                    {pending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
-                    )}
-                    Salva modifiche
-                  </Button>
-                </div>
-              ) : null}
+              <div className="flex items-center gap-2 border-t border-slate-100 pt-4">
+                <Button
+                  variant="secondary"
+                  onClick={resetForm}
+                  disabled={pending}
+                >
+                  Annulla
+                </Button>
+                <Button onClick={save} disabled={pending || locked}>
+                  {pending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  Salva modifiche
+                </Button>
+              </div>
             </div>
           </Card>
 
@@ -535,6 +477,7 @@ export function ContentEditor({
                   size="md"
                   disabled={!hasCaption}
                   disabledReason="La caption è obbligatoria per approvare"
+                  beforeApprove={persistForm}
                 />
               ) : null}
 
@@ -550,111 +493,9 @@ export function ContentEditor({
                 </Button>
               ) : null}
 
-              {canSchedule ? (
-                showSchedule ? (
-                  <div className="space-y-2">
-                    <Input
-                      type="datetime-local"
-                      value={scheduledDate}
-                      onChange={(e) => setScheduledDate(e.target.value)}
-                    />
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={doSchedule} disabled={pending || !scheduledDate}>
-                        Programma
-                      </Button>
-                      <Button variant="secondary" size="sm" onClick={() => setShowSchedule(false)}>
-                        Annulla
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <Button
-                    className="w-full"
-                    variant="warning"
-                    onClick={() => setShowSchedule(true)}
-                    disabled={pending}
-                  >
-                    <CalendarClock className="h-4 w-4" />
-                    Programma
-                  </Button>
-                )
-              ) : null}
-
-              {canUnschedule ? (
-                <Button
-                  className="w-full"
-                  variant="warning"
-                  onClick={doUnschedule}
-                  disabled={pending}
-                >
-                  <CalendarClock className="h-4 w-4" />
-                  Annulla programmazione
-                </Button>
-              ) : null}
-
-              {canPublish ? (
-                <div className="space-y-2 border-t border-slate-100 pt-3">
-                  <p className="text-xs font-medium text-slate-500">
-                    Pubblicazione
-                  </p>
-
-                  {content.platforms.length === 0 ? (
-                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      Nessuna piattaforma selezionata. Scegline almeno una nei
-                      dettagli del contenuto per poter pubblicare.
-                    </p>
-                  ) : (
-                    <>
-                      <Button
-                        className="w-full"
-                        variant="success"
-                        onClick={() => doPublish("ALL")}
-                        disabled={pending || !hasCaption || !publishable}
-                        title={
-                          !publishable
-                            ? "Instagram richiede almeno un media associato"
-                            : undefined
-                        }
-                      >
-                        <Rocket className="h-4 w-4" />
-                        Pubblica su tutte le piattaforme
-                      </Button>
-
-                      <p className="pt-1 text-[11px] text-slate-400">
-                        Oppure pubblica su una singola piattaforma:
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {content.platforms.map((p) => (
-                          <Button
-                            key={p.id}
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => doPublish(p.platform)}
-                            disabled={pending || !publishable}
-                          >
-                            <Rocket className="h-3.5 w-3.5" />
-                            {PLATFORM_LABELS[
-                              p.platform as keyof typeof PLATFORM_LABELS
-                            ]}
-                          </Button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : null}
-
-              {!canPublish && ["APPROVED", "SCHEDULED"].includes(content.status) ? (
-                <p className="text-xs text-slate-400">
-                  Per pubblicare è necessaria un&apos;approvazione esplicita
-                  registrata in precedenza.
-                </p>
-              ) : null}
-
               {!hasCaption ? (
                 <p className="text-xs text-amber-600">
-                  Scrivi una caption per procedere con approvazione,
-                  programmazione o pubblicazione.
+                  Scrivi una caption per procedere con l&apos;approvazione.
                 </p>
               ) : null}
             </div>
@@ -714,8 +555,8 @@ export function ContentEditor({
               <span className="font-semibold text-slate-800">
                 Suggerimento:
               </span>{" "}
-              usa l&apos;Assistente AI per generare caption, hashtag, immagini e
-              carousel direttamente dalla chat.
+              compila i campi qui sopra e, quando sei pronto, approva per
+              programmare la pubblicazione dalla sezione Pianificazione.
             </p>
           </div>
         </div>

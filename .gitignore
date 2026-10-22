@@ -35,3 +35,10 @@ yarn-debug.log*
 *.tsbuildinfo
 .vercel
 .vercel
+
+# Media curati a mano (foto/video selezionati): pesanti, non in git
+public/curated/
+
+# Artefatti di lavoro (anteprime/note di selezione WIP): non versionati
+public/curated-preview/
+curated-photos.selection.json

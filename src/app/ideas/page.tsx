@@ -20,11 +20,6 @@ export default async function IdeasPage() {
       <PageHeader
         title="Idee"
         description="Spunti da trasformare in contenuti social. Un'idea esiste anche senza diventare un contenuto."
-        action={
-          <LinkButton href="/chat" variant="secondary" size="sm">
-            Sviluppa con l&apos;AI
-          </LinkButton>
-        }
       />
 
       <Card className="mb-6">

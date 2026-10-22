@@ -8,7 +8,6 @@ import {
   duplicateContentTool,
   deleteContentTool,
 } from "@/lib/ai/tools/content";
-import { searchCatalogTool } from "@/lib/ai/tools/catalog";
 import { createIdeaTool, listIdeasTool } from "@/lib/ai/tools/ideas";
 import {
   generateCaptionTool,
@@ -16,6 +15,7 @@ import {
   generateImageTool,
 } from "@/lib/ai/tools/generation";
 import { createCarouselTool, generateVideoTool } from "@/lib/ai/tools/carousel";
+import { attachVideoTool } from "@/lib/ai/tools/video";
 import {
   scheduleContentTool,
   unscheduleContentTool,
@@ -32,7 +32,6 @@ import { publishContentTool } from "@/lib/ai/tools/social";
 
 export const AI_TOOLS: AiTool[] = [
   createContentTool,
-  searchCatalogTool,
   updateContentTool,
   getContentTool,
   listContentsTool,
@@ -45,6 +44,7 @@ export const AI_TOOLS: AiTool[] = [
   generateImageTool,
   createCarouselTool,
   generateVideoTool,
+  attachVideoTool,
   scheduleContentTool,
   unscheduleContentTool,
   getCalendarTool,

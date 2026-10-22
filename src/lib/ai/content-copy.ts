@@ -102,6 +102,12 @@ export function fallbackCopyFromTopic(input: {
   const format = (input.format ?? "").trim().toUpperCase() || "HERO_DESTINATION";
 
   let title = place ? editorialTitle(format, place, NO_FACTS) : null;
+  // "Italia" generica → il video è un mix del mare del Sud
+  // (Calabria/Sicilia/Puglia/Sardegna), titolato "Mare Italia": non si vende
+  // l'intera penisola, solo le sue coste del sud.
+  if (place && /^ital(ia|y|ia del sud)$/i.test(place.trim())) {
+    title = "Mare Italia";
+  }
   // Difesa finale: un titolo che non nomina il luogo, o che è una delle formule
   // bandite, non è un titolo ammissibile. Il nome del luogo è l'unico titolo che
   // non può mai sbagliare, quindi si ripiega su quello.
