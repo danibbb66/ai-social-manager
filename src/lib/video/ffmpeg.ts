@@ -30,6 +30,14 @@ import { APP_FONT_STACK } from "@/lib/fonts";
 const KNOWN_PATHS: string[] = [process.env.FFMPEG_PATH ?? ""].filter(Boolean);
 
 /**
+ * Binario ffmpeg incluso nel repository (`bin/ffmpeg`), per i server Linux
+ * (Vercel) dove `ffmpeg-static` non riesce a scaricare il proprio binario.
+ * Solo su Linux: su Windows/macOS il file ELF incluso non sarebbe eseguibile.
+ */
+const BUNDLED_FFMPEG =
+  process.platform === "linux" ? path.join(process.cwd(), "bin", "ffmpeg") : null;
+
+/**
  * Percorso ffmpeg risolto l'ultima volta.
  *
  * La risoluzione costa un giro di `fs.access` per ogni candidato: si fa una
@@ -64,6 +72,13 @@ export async function resolveFfmpegPath(): Promise<string> {
       console.log(`[ffmpeg] eseguibile risolto da FFMPEG_PATH: ${p}`);
       return p;
     }
+  }
+  // Binario incluso nel repository (Vercel/Linux): affidabile dove il download
+  // di ffmpeg-static fallisce in fase di build.
+  if (BUNDLED_FFMPEG && (await executableExists(BUNDLED_FFMPEG))) {
+    resolvedFfmpegPath = BUNDLED_FFMPEG;
+    console.log(`[ffmpeg] eseguibile risolto dal binario incluso nel repo: ${BUNDLED_FFMPEG}`);
+    return BUNDLED_FFMPEG;
   }
   // Binario statico incluso via `ffmpeg-static`: disponibile anche dove ffmpeg
   // non è installato nel sistema (es. serverless Vercel).
