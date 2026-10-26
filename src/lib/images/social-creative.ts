@@ -25,6 +25,7 @@
 import sharp, { type OverlayOptions } from "sharp";
 import type { CommercialExtraction } from "@/lib/catalog/commercial-extraction";
 import { commercialLines } from "@/lib/catalog/commercial-extraction";
+import { APP_FONT_STACK } from "@/lib/fonts";
 
 /** Formato quadrato: la sposta sicura per ogni piattaforma, come nel resto dell'app. */
 export const SOCIAL_CREATIVE_SIZE = 1080;
@@ -645,7 +646,7 @@ function wordmarkSvg(input: {
   const baseline = Math.round(fontSize * 1.2);
   const attrs =
     `x="2" y="${baseline}" font-size="${fontSize}" font-weight="700" ` +
-    `font-family="Arial, Helvetica, sans-serif"`;
+    `font-family="${APP_FONT_STACK}"`;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}">` +
     `<text ${attrs} fill="#000000" fill-opacity="0.92" stroke="#000000" ` +
@@ -740,7 +741,7 @@ function buildOverlay(input: {
   accent: { mid: string; bottom: string };
 }): string {
   const { size, title, kicker, subtitle, commercial, points, card, rowHeight, subtitleH, height, accent } = input;
-  const family = "Arial, Helvetica, sans-serif";
+  const family = APP_FONT_STACK;
   // Senza dati né punti la card è solo un contenitore per il titolo: si toglie
   // del tutto e il titolo poggia direttamente sulla foto (velatura in basso +
   // alone scuro). Con punti o listino dentro, invece, la card resta il fondo
@@ -1054,7 +1055,7 @@ function buildCallout(input: {
   const bannerY = Math.round(centerY - bannerH / 2);
   const radius = Math.round(size * 0.028);
 
-  const family = "Arial, Helvetica, sans-serif";
+  const family = APP_FONT_STACK;
   const haloWidth = Math.round(size * 0.006);
   const haloAttrs =
     `fill="#0b0f14" fill-opacity="0.5" stroke="#0b0f14" stroke-opacity="0.5" ` +

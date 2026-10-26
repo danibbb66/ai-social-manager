@@ -16,6 +16,7 @@ import { accentForTitle } from "@/lib/images/social-creative";
 import ffmpegStatic from "ffmpeg-static";
 import { path as ffprobeStaticPath } from "ffprobe-static";
 import { materialize, outputDirFor, publishOutput } from "@/lib/storage";
+import { APP_FONT_STACK } from "@/lib/fonts";
 
 /**
  * Percorsi candidati espliciti, oltre al comando di sistema.
@@ -663,8 +664,8 @@ async function renderTitlePng(
     `<stop offset="50%" stop-color="${accent.mid}"/>` +
     `<stop offset="100%" stop-color="${accent.bottom}"/>` +
     `</linearGradient></defs>` +
-    `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="700" font-family="Arial, Helvetica, sans-serif" fill="#0b0f14" fill-opacity="0.55" stroke="#0b0f14" stroke-opacity="0.55" stroke-width="${haloWidth}" stroke-linejoin="round">${esc(title)}</text>` +
-    `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="700" font-family="Arial, Helvetica, sans-serif" fill="url(#g)">${esc(title)}</text>` +
+    `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="700" font-family="${APP_FONT_STACK}" fill="#0b0f14" fill-opacity="0.55" stroke="#0b0f14" stroke-opacity="0.55" stroke-width="${haloWidth}" stroke-linejoin="round">${esc(title)}</text>` +
+    `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="700" font-family="${APP_FONT_STACK}" fill="url(#g)">${esc(title)}</text>` +
     `</svg>`;
 
   const buffer = await sharp(Buffer.from(svg, "utf8")).png().toBuffer();
