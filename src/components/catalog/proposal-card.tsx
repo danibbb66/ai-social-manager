@@ -1,5 +1,5 @@
-﻿import Link from "next/link";
-import { AlertTriangle, ExternalLink, MinusCircle, FileText } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, ExternalLink, MinusCircle } from "lucide-react";
 import {
   Badge,
   CatalogConfidenceBadge,
@@ -9,6 +9,8 @@ import {
 import { CATALOG_COMMERCIAL_FIELDS } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { CatalogAnomaly } from "@/lib/catalog/offerte";
+
+import { RegenerateLocandinaButton } from "@/components/catalog/regenerate-button";
 
 export type CatalogProposalView = {
   id: string;
@@ -140,13 +142,7 @@ export function CatalogProposalCard({
             </Link>
           </div>
 
-          <Link
-            href={`/contents?fromProposal=${proposal.id}`}
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500"
-          >
-            <FileText className="h-3.5 w-3.5" />
-            Trasforma in Post
-          </Link>
+          <RegenerateLocandinaButton proposalId={proposal.id} />
         </div>
       </div>
     </div>
