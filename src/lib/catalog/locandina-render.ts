@@ -11,6 +11,11 @@ import type { ParsedLocandina } from "@/lib/catalog/locandina-parse";
  * hotel con prezzo, footer con URL) con il marchio dell'agenzia.
  *
  * Come per i post, il testo è composto in SVG e rasterizzato da `sharp`.
+ *
+ * Il layout è DELIBERATAMENTE adattivo: ogni locandina del fornitore ha un
+ * titolo e un numero di hotel diversi, quindi titolo e blocco hotel vengono
+ * allargati/compressi in base ai dati, senza posizioni fisse che facciano
+ * uscire il testo dai bordi.
  */
 
 /** Formato ritratto 4:5, come i post immagine (feed IG/FB). */
@@ -55,6 +60,56 @@ async function svgToBuffer(svg: string): Promise<Buffer> {
   return sharp(Buffer.from(svg, "utf8")).png().toBuffer();
 }
 
+/** Larghezza approssimata di una stringa a un dato corpo (stima per DejaVu Sans). */
+function estimateWidth(text: string, fontSize: number): number {
+  return text.length * fontSize * 0.62;
+}
+
+/**
+ * Adatta il titolo alla larghezza disponibile: va a capo (max 2 righe) e
+ * riduce il corpo se serve, così un titolo lungo come "Rodi da Milano e Roma"
+ * non esce mai dal bordo destro.
+ */
+function fitTitle(
+  title: string,
+  maxWidth: number,
+  maxFont: number
+): { lines: string[]; fontSize: number } {
+  const words = title.split(/\s+/).filter(Boolean);
+
+  const build = (fs: number): string[] => {
+    const lines: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      const test = cur ? `${cur} ${w}` : w;
+      if (estimateWidth(test, fs) <= maxWidth) cur = test;
+      else if (!cur) cur = test; // parola singola lunghissima: la lascio intera
+      else {
+        lines.push(cur);
+        cur = w;
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+
+  let fontSize = maxFont;
+  let lines = build(fontSize);
+  while (fontSize > 44) {
+    if (lines.length <= 2 && lines.every((l) => estimateWidth(l, fontSize) <= maxWidth)) {
+      break;
+    }
+    fontSize -= 4;
+    lines = build(fontSize);
+  }
+  // Tronca a 2 righe: se proprio non ci sta, aggiunge i puntini di sospensione.
+  let out = lines.slice(0, 2);
+  if (out.length === 2 && lines.length > 2) {
+    out[1] = out[1].slice(0, out[1].length - 1) + "…";
+  }
+  return { lines: out, fontSize };
+}
+
 export async function renderLocandina(input: LocandinaRenderInput): Promise<Buffer> {
   const W = LOCANDINA_WIDTH;
   const H = LOCANDINA_HEIGHT;
@@ -70,27 +125,54 @@ export async function renderLocandina(input: LocandinaRenderInput): Promise<Buff
   const accent = "#e5383b";
   const navy = "#0b2545";
 
-  const hotelRows = parsed.hotels
+  // --- Blocco titolo (adattivo, centrato) ---
+  const titleFit = fitTitle(input.title, W - 120, 88);
+  const titleFont = titleFit.fontSize;
+  const lineH = titleFont + 8;
+  const titleTop = titleFit.lines.length === 1 ? 150 : 134;
+  const titleSvg = titleFit.lines
+    .map(
+      (line, i) =>
+        `<text x="${W / 2}" y="${titleTop + i * lineH}" text-anchor="middle" font-size="${titleFont}" font-weight="700" fill="#ffffff" font-family="${APP_FONT_STACK}">${esc(line)}</text>`
+    )
+    .join("\n");
+
+  const subtitleY = titleTop + (titleFit.lines.length - 1) * lineH + 50;
+  const pillY = subtitleY + 46;
+  const pillH = 56;
+
+  // --- Blocco hotel (adattivo al numero di righe) ---
+  const maxHotels = 6;
+  const hotels = parsed.hotels.slice(0, maxHotels);
+  const n = Math.max(hotels.length, 1);
+  const hotelsTop = pillY + pillH + 40;
+  const availableH = H - 130 - hotelsTop; // spazio prima del footer
+  const rowH = Math.min(128, Math.floor(availableH / n) - 16);
+  const rowStep = rowH + 20;
+
+  const hotelRows = hotels
     .map((h, i) => {
-      const y = 470 + i * 150;
+      const y = hotelsTop + i * rowStep;
       return `
-        <rect x="60" y="${y}" width="960" height="128" rx="14" fill="rgba(255,255,255,0.92)"/>
-        <text x="84" y="${y + 54}" font-size="40" font-weight="700" fill="#0b2545" font-family="${APP_FONT_STACK}">${esc(h.name)} ${starsMark(h.stars)}</text>
-        <text x="84" y="${y + 96}" font-size="26" fill="#5a6572" font-family="${APP_FONT_STACK}">${esc(parsed.board ?? "")}${parsed.nights ? ` · ${parsed.nights} notti` : ""}</text>
-        <text x="996" y="${y + 88}" text-anchor="end" font-size="46" font-weight="700" fill="${accent}" font-family="${APP_FONT_STACK}">${esc(String(h.price))} €</text>`;
+        <rect x="60" y="${y}" width="960" height="${rowH}" rx="14" fill="rgba(255,255,255,0.92)"/>
+        <text x="84" y="${y + 52}" font-size="40" font-weight="700" fill="#0b2545" font-family="${APP_FONT_STACK}">${esc(h.name)} ${starsMark(h.stars)}</text>
+        <text x="84" y="${y + 92}" font-size="26" fill="#5a6572" font-family="${APP_FONT_STACK}">${esc(parsed.board ?? "")}${parsed.nights ? ` · ${parsed.nights} notti` : ""}</text>
+        <text x="996" y="${y + 84}" text-anchor="end" font-size="46" font-weight="700" fill="${accent}" font-family="${APP_FONT_STACK}">${esc(String(h.price))} €</text>`;
     })
     .join("\n");
 
-  const footerY = 470 + Math.max(parsed.hotels.length, 1) * 150 + 20;
+  const footerY = Math.min(hotelsTop + n * rowStep + 12, H - 120);
 
+  // Scrim scuro sotto il blocco titolo/pill: altezza dinamica fino all'inizio
+  // degli hotel, così il titolo resta sempre leggibile sulla foto.
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-    <rect x="0" y="0" width="${W}" height="360" fill="rgba(0,0,0,0.45)"/>
-    <text x="72" y="150" font-size="88" font-weight="700" fill="#ffffff" font-family="${APP_FONT_STACK}">${esc(input.title)}</text>
-    ${parsed.departure ? `<text x="72" y="205" font-size="34" fill="#ffffff" font-family="${APP_FONT_STACK}">Voli diretti da ${esc(parsed.departure)}</text>` : ""}
-    <rect x="72" y="245" width="460" height="64" rx="32" fill="${accent}"/>
-    <text x="302" y="288" text-anchor="middle" font-size="34" font-weight="700" fill="#ffffff" font-family="${APP_FONT_STACK}">${esc(parsed.board ?? "Offerta speciale")}</text>
+    <rect x="0" y="0" width="${W}" height="${hotelsTop - 10}" fill="rgba(0,0,0,0.5)"/>
+    ${titleSvg}
+    ${parsed.departure ? `<text x="${W / 2}" y="${subtitleY}" text-anchor="middle" font-size="32" fill="#e8eef5" font-family="${APP_FONT_STACK}">Voli diretti da ${esc(parsed.departure)}</text>` : ""}
+    <rect x="${W / 2 - 230}" y="${pillY}" width="460" height="${pillH}" rx="${pillH / 2}" fill="${accent}"/>
+    <text x="${W / 2}" y="${pillY + pillH / 2 + 11}" text-anchor="middle" font-size="32" font-weight="700" fill="#ffffff" font-family="${APP_FONT_STACK}">${esc(parsed.board ?? "Offerta speciale")}</text>
     ${hotelRows}
-    <rect x="0" y="${footerY}" width="${W}" height="${H - footerY}" fill="rgba(0,0,0,0.45)"/>
+    <rect x="0" y="${footerY}" width="${W}" height="${H - footerY}" fill="rgba(0,0,0,0.5)"/>
     <rect x="0" y="${H - 110}" width="${W}" height="110" fill="${navy}"/>
     <text x="${W / 2}" y="${H - 42}" text-anchor="middle" font-size="36" font-weight="700" fill="#ffffff" font-family="${APP_FONT_STACK}">${esc(url)}</text>
   </svg>`;
@@ -106,13 +188,13 @@ export async function renderLocandina(input: LocandinaRenderInput): Promise<Buff
 
   if (input.logo && input.logo.buffer.length > 0) {
     const logo = await sharp(input.logo.buffer)
-      .resize({ height: 84, fit: "inside", withoutEnlargement: true })
+      .resize({ height: 72, fit: "inside", withoutEnlargement: true })
       .png()
       .toBuffer();
-    overlays.push({ input: logo, top: 40, left: 72 });
+    overlays.push({ input: logo, top: 48, left: 56 });
   } else if (input.brandName) {
     const wordmark = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      <text x="72" y="92" font-size="48" font-weight="700" fill="#ffffff" font-family="${APP_FONT_STACK}">${esc(input.brandName)}</text>
+      <text x="56" y="96" font-size="44" font-weight="700" fill="#ffffff" font-family="${APP_FONT_STACK}">${esc(input.brandName)}</text>
     </svg>`;
     overlays.push({ input: await svgToBuffer(wordmark), top: 0, left: 0 });
   }
