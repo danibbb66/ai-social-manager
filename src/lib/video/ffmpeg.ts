@@ -47,7 +47,11 @@ let resolvedFfmpegPath: string | null = null;
 
 async function executableExists(path: string): Promise<boolean> {
   try {
-    await fs.access(path);
+    // X_OK (e non la sola esistenza): `fs.access` senza mode controlla solo
+    // F_OK, quindi un binario presente ma NON eseguibile (bit +x perso nel
+    // bundle di Vercel) veniva considerato valido e lo spawn falliva con
+    // EACCES. Qui vogliamo davvero che il file possa essere eseguito.
+    await fs.access(path, fs.constants.X_OK);
     return true;
   } catch {
     return false;
