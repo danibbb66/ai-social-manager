@@ -7,6 +7,8 @@ import {
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import fs from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import os from "node:os";
 import type { Readable } from "node:stream";
@@ -231,7 +233,11 @@ export async function materialize(ref: string): Promise<string> {
       `${Date.now()}-${Math.random().toString(36).slice(2)}-${path.basename(k)}`
     );
     await fs.mkdir(path.dirname(tmp), { recursive: true });
-    await fs.writeFile(tmp, await readFileBuffer(k));
+    // Stream diretto R2 → disco: evita di tenere in RAM l'intero file (le clip
+    // video curate arrivano anche a 140MB), essenziale sul piano Hobby di
+    // Vercel dove la memoria della funzione è stretta.
+    const res = await s3().send(new GetObjectCommand({ Bucket: r2Bucket!, Key: k }));
+    await pipeline(res.Body as Readable, createWriteStream(tmp));
     return tmp;
   }
   return localPathForKey(k);

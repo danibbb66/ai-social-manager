@@ -22,6 +22,24 @@ import { prisma } from "@/lib/prisma";
 import { logAudit } from "@/lib/audit";
 import { friendlyMessage } from "@/lib/errors/user-message";
 
+/** Esegue `fn` su ogni elemento con un tetto di concorrenza, preservando l'ordine. */
+async function mapLimit<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const i = cursor++;
+      out[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 /**
  * Servizio video: generazione del reel e locandina di copertina.
  *
@@ -729,17 +747,24 @@ async function buildMontageClips(input: {
   // vengono poi INTERLEAVED (round-robin), un taglio per clip sorgente per
   // volta: il reel alterna i luoghi invece di svuotare un solo clip (che
   // apparirebbe come un'unica lunga ripresa) prima del successivo.
-  const perClip: { path: string; trimStartSec: number }[][] = [];
-  for (const clip of input.videoClips) {
-    const abs = await materialize(clip.url);
-    const duration = await probeVideoDurationSec(abs);
-    const usable = Math.max(1, duration ? Math.floor(duration / SCENE_SECONDS) : 1);
-    const list: { path: string; trimStartSec: number }[] = [];
-    for (let k = 0; k < usable; k += 1) {
-      list.push({ path: abs, trimStartSec: k * SCENE_SECONDS });
+  // Download + probe in PARALLELO (tetto di concorrenza 3): su Vercel le clip
+  // vivono su R2 e il download sequenziale di 6 file (anche >100MB l'uno per
+  // le riprese 1080p/60fps) è il collo di bottiglia dominante. Concorrenza
+  // limitata a 3 per non esaurire la RAM del piano Hobby.
+  const perClip: { path: string; trimStartSec: number }[][] = await mapLimit(
+    input.videoClips,
+    3,
+    async (clip): Promise<{ path: string; trimStartSec: number }[]> => {
+      const abs = await materialize(clip.url);
+      const duration = await probeVideoDurationSec(abs);
+      const usable = Math.max(1, duration ? Math.floor(duration / SCENE_SECONDS) : 1);
+      const list: { path: string; trimStartSec: number }[] = [];
+      for (let k = 0; k < usable; k += 1) {
+        list.push({ path: abs, trimStartSec: k * SCENE_SECONDS });
+      }
+      return list;
     }
-    perClip.push(list);
-  }
+  );
   const segments: { path: string; trimStartSec: number }[] = [];
   const maxRounds = perClip.reduce((m, l) => Math.max(m, l.length), 0);
   for (let round = 0; round < maxRounds; round += 1) {

@@ -294,7 +294,23 @@ function buildEncodeArgs(hasAudio: boolean): string[] {
   } else {
     out.push("-an");
   }
-  out.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart");
+  // `-preset veryfast` accelera molto l'encoding rispetto al default "medium"
+  // (fondamentale su Vercel, dove la CPU del piano Hobby è limitata e la
+  // generazione deve restare sotto il timeout della funzione). La qualità a
+  // 1080x1920 resta ottima per i social; `-crf 23` (default) esplicitato per
+  // chiarezza.
+  out.push(
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "23",
+    "-pix_fmt",
+    "yuv420p",
+    "-movflags",
+    "+faststart"
+  );
   return out;
 }
 
