@@ -74,8 +74,13 @@ export function parseLocandinaText(rawText: string): ParsedLocandina {
     exclude: null,
   };
 
+  // Formati visti finora:
+  //  - "HOTEL BARCELONA HOUSE 3* 349 €"      (nome + stelle + prezzo)
+  //  - "FIHALHOHI MALDIVES 4* da 3.149 €"     (come sopra, con "da" prima del prezzo)
+  //  - "THULHAGIRI ISLAND RESORT 4* da 3.249 €"
+  // Il "da" è opzionale; la parte letterale del prezzo ("da", "€") viene scartata.
   const hotelNameRe =
-    /([A-Z][A-Z0-9'’\- ]{3,40}?)\s+(\d)\s*\*\s+([\d.,]+)\s*(?:€|©|euro|eur)?/gi;
+    /([A-Z][A-Z0-9'’\- ]{3,40}?)\s+(\d)\s*\*\s+(?:da\s+)?([\d.,]+)\s*(?:€|©|euro|eur)?/gi;
 
   for (const line of text.split("\n")) {
     // Hotel: "NOME 3* 349 €"

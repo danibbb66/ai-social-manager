@@ -166,13 +166,23 @@ export async function renderLocandina(input: LocandinaRenderInput): Promise<Buff
   // Scrim scuro sotto il blocco titolo/pill: altezza dinamica fino all'inizio
   // degli hotel, così il titolo resta sempre leggibile sulla foto.
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-    <rect x="0" y="0" width="${W}" height="${hotelsTop - 10}" fill="rgba(0,0,0,0.5)"/>
+    <defs>
+      <linearGradient id="topScrim" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#000000" stop-opacity="0.75"/>
+        <stop offset="100%" stop-color="#000000" stop-opacity="0.08"/>
+      </linearGradient>
+      <linearGradient id="bottomScrim" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#000000" stop-opacity="0.02"/>
+        <stop offset="100%" stop-color="#000000" stop-opacity="0.70"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="0" width="${W}" height="${hotelsTop + 60}" fill="url(#topScrim)"/>
     ${titleSvg}
     ${parsed.departure ? `<text x="${W / 2}" y="${subtitleY}" text-anchor="middle" font-size="32" fill="#e8eef5" font-family="${APP_FONT_STACK}">Voli diretti da ${esc(parsed.departure)}</text>` : ""}
     <rect x="${W / 2 - 230}" y="${pillY}" width="460" height="${pillH}" rx="${pillH / 2}" fill="${accent}"/>
     <text x="${W / 2}" y="${pillY + pillH / 2 + 11}" text-anchor="middle" font-size="32" font-weight="700" fill="#ffffff" font-family="${APP_FONT_STACK}">${esc(parsed.board ?? "Offerta speciale")}</text>
     ${hotelRows}
-    <rect x="0" y="${footerY}" width="${W}" height="${H - footerY}" fill="rgba(0,0,0,0.5)"/>
+    <rect x="0" y="${footerY - 60}" width="${W}" height="${H - footerY + 60}" fill="url(#bottomScrim)"/>
     <rect x="0" y="${H - 110}" width="${W}" height="110" fill="${navy}"/>
     <text x="${W / 2}" y="${H - 42}" text-anchor="middle" font-size="36" font-weight="700" fill="#ffffff" font-family="${APP_FONT_STACK}">${esc(url)}</text>
   </svg>`;
