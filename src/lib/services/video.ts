@@ -12,7 +12,7 @@ import { listCuratedVideos } from "@/lib/curated/media";
 import { getStockProvider } from "@/lib/images/factory";
 import { downloadRemoteImage } from "@/lib/images/remote";
 import { deleteUploadedFile, saveUploadedFile, uploadedFileExists } from "@/lib/uploads";
-import { materialize } from "@/lib/storage";
+import { materialize, publicUrlFor, isCloudStorage } from "@/lib/storage";
 import { logAIError } from "@/lib/logger";
 import { config } from "@/lib/env";
 import { createAsset, linkAsset } from "@/lib/services/media";
@@ -723,6 +723,19 @@ const MAX_TOTAL_SECONDS = 20;
  * 3. riciclo dei segmenti finché il minimo di scene (15s) non è coperto;
  * 4. riempimento con scene pulite a immagini (Ken Burns) se i video finiscono.
  */
+/**
+ * Risolve l'input di una clip per ffmpeg/ffprobe.
+ *
+ * In cloud (Vercel) la clip si passa come URL pubblico di R2: ffmpeg/ffprobe
+ * leggono via HTTP con richieste "range", scaricando solo i ~3s necessari
+ * invece dell'intero file (le clip curate arrivano anche a 140MB). In locale
+ * resta il materialize sul percorso del disco.
+ */
+async function clipInputPath(ref: string): Promise<string> {
+  if (isCloudStorage()) return publicUrlFor(ref);
+  return materialize(ref);
+}
+
 async function buildMontageClips(input: {
   coverFrame: string | null;
   coverHasOverlay: boolean;
@@ -755,7 +768,7 @@ async function buildMontageClips(input: {
     input.videoClips,
     3,
     async (clip): Promise<{ path: string; trimStartSec: number }[]> => {
-      const abs = await materialize(clip.url);
+      const abs = await clipInputPath(clip.url);
       const duration = await probeVideoDurationSec(abs);
       const usable = Math.max(1, duration ? Math.floor(duration / SCENE_SECONDS) : 1);
       const list: { path: string; trimStartSec: number }[] = [];
