@@ -5,6 +5,7 @@ import {
   hasTiktok,
 } from "@/lib/env";
 import { Card, CardHeader, PageHeader, Badge } from "@/components/ui";
+import { ConnectionTest } from "@/components/connection-test";
 import { Terminal, Database, Lock, Share2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -102,6 +103,7 @@ export default async function SettingsPage() {
             hint="TIKTOK_ACCESS_TOKEN + TIKTOK_OPEN_ID"
           />
         </div>
+        <ConnectionTest />
       </Card>
 
       <Card className="mb-6">

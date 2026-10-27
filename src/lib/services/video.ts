@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { MontageClip, VideoProvider } from "@/lib/video/provider";
 import { getVideoProvider } from "@/lib/video/factory";
-import { probeVideoDurationSec } from "@/lib/video/ffmpeg";
+import { extractVideoFrame, probeVideoDurationSec } from "@/lib/video/ffmpeg";
 import { getStockVideoProvider } from "@/lib/video/stock";
 import type { StockVideoProvider } from "@/lib/video/stock";
 import { getPexelsVideoProvider } from "@/lib/video/pexels";
@@ -1314,6 +1315,41 @@ async function ensureVideoPosterInner(
   }
 
   if (candidates.length === 0) {
+    // Fallback: estrai il primo frame del video (porta titolo + logo composti
+    // dal montaggio) come locandina, così anteprime ed editor social hanno una
+    // copertina reale e non un frame casuale scelto da Meta.
+    const videoAsset = content.assets.find((a) => a.kind === "VIDEO");
+    if (videoAsset) {
+      try {
+        const localVideo = await materialize(videoAsset.url);
+        const framePath = path.join(
+          os.tmpdir(),
+          `asm-poster-${content.id}-${Date.now()}.jpg`
+        );
+        await extractVideoFrame(localVideo, framePath, 0);
+        const buffer = await fs.readFile(framePath);
+        const saved = await saveUploadedFile({
+          buffer,
+          originalName: `poster-${content.id}.jpg`,
+          mimeType: "image/jpeg",
+        });
+        await fs.rm(framePath, { force: true }).catch(() => {});
+        const created = await createAsset({
+          url: saved.url,
+          filename: saved.url.split("/").pop() || "poster.jpg",
+          kind: "IMAGE",
+          contentId: content.id,
+          metadata: { role: "POSTER", source: "video-frame" },
+        });
+        await logAudit("VIDEO_POSTER_SET", "ContentAsset", created.id, {
+          contentId: content.id,
+          source: "video-frame",
+        });
+        return { ok: true, assetId: created.id, created: true };
+      } catch (e) {
+        logAIError("video.poster.frame", { contentId: content.id }, e);
+      }
+    }
     return {
       ok: false,
       reason:

@@ -211,7 +211,8 @@ export default async function PlanningPage({
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {contents.map((c) => {
-              const first = c.assets[0];
+              const first =
+                c.assets.find((a) => a.kind === "IMAGE") ?? c.assets[0];
               return (
                 <div
                   key={c.id}

@@ -75,8 +75,11 @@ export class FacebookProvider implements SocialProvider {
         if (!source) return { ok: false, message: "Nessun video da pubblicare." };
         const videoUrl = publicMediaUrl(source);
         if (!videoUrl) return { ok: false, message: NO_PUBLIC_URL };
+        // Copertina esplicita (frame titolo+logo) invece del frame casuale di Facebook.
+        const thumb = publicMediaUrl(payload.mediaUrls[0]);
         const res = await this.graph(`/${pageId}/videos`, {
           file_url: videoUrl,
+          ...(thumb ? { thumb } : {}),
           description: message,
           access_token: token,
         });

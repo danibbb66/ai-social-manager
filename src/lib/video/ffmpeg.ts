@@ -159,6 +159,32 @@ export async function probeVideoDurationSec(filePath: string): Promise<number | 
 }
 
 /**
+ * Estrae un singolo fotogramma dal video in un file JPEG.
+ *
+ * Usato per la locandina/copertina dei reel: il primo frame (a t=0) porta il
+ * titolo e il logo composti dal montaggio, quindi è l'immagine giusta da
+ * mostrare come copertina su Instagram/Facebook e nell'interfaccia.
+ */
+export async function extractVideoFrame(
+  videoPath: string,
+  outPath: string,
+  timeSec = 0
+): Promise<void> {
+  const executable = await resolveFfmpegPath();
+  await runFfmpeg(
+    [
+      "-ss", String(timeSec),
+      "-i", videoPath,
+      "-frames:v", "1",
+      "-q:v", "2",
+      "-y",
+      outPath,
+    ],
+    executable
+  );
+}
+
+/**
  * ffmpeg è utilizzabile adesso?
  *
  * Verifica economica se il percorso è già risolto; altrimenti prova il

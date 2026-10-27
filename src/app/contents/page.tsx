@@ -336,7 +336,9 @@ export default async function ContentsPage({
         <>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {contents.map((c) => {
-            const first = c.assets[0];
+            // Preferisce un'immagine (foto del post o locandina del video): un
+            // video mostra il frame titolo+logo, non un segnaposto "Video".
+            const first = c.assets.find((a) => a.kind === "IMAGE") ?? c.assets[0];
             const preview = excerpt(c.caption, 110);
             return (
               <Link
@@ -425,7 +427,8 @@ export default async function ContentsPage({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {contents.map((c) => {
-                  const first = c.assets[0];
+                  const first =
+                    c.assets.find((a) => a.kind === "IMAGE") ?? c.assets[0];
                   return (
                     <tr key={c.id} className="hover:bg-slate-50">
                       <td className="px-5 py-3">

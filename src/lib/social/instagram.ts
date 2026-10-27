@@ -246,13 +246,16 @@ export class InstagramProvider implements SocialProvider {
 
       if (payload.contentType === "VIDEO") {
         const videoUrl = mediaUrl(payload.videoUrl);
-        const fallback = mediaUrl(payload.mediaUrls[0]);
-        const finalUrl = videoUrl ?? fallback;
+        const coverUrl = mediaUrl(payload.mediaUrls[0]);
+        const finalUrl = videoUrl ?? coverUrl;
         if (!finalUrl) return { ok: false, message: NO_PUBLIC_URL };
         const containerId = await this.createReadyContainer(
           {
             media_type: "VIDEO",
             video_url: finalUrl,
+            // Copertina esplicita (frame titolo+logo) invece del frame casuale
+            // che Meta sceglierebbe da solo.
+            ...(coverUrl ? { cover_url: coverUrl } : {}),
             caption,
           },
           token,
