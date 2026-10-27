@@ -97,7 +97,7 @@ export default async function PlanningPage({
           >
             <ChevronLeft className="h-4 w-4" />
           </LinkButton>
-          <span className="min-w-40 text-center text-base font-semibold capitalize text-slate-800">
+          <span className="min-w-40 text-center text-base font-semibold capitalize text-slate-800 dark:text-slate-200">
             {format(current, "MMMM yyyy", { locale: it })}
           </span>
           <LinkButton
@@ -141,7 +141,7 @@ export default async function PlanningPage({
                     today
                       ? "bg-sky-600 text-white"
                       : inMonth
-                        ? "text-slate-700"
+                        ? "text-slate-700 dark:text-slate-300"
                         : "text-slate-400"
                   )}
                 >
@@ -198,7 +198,7 @@ export default async function PlanningPage({
       {/* Elenco contenuti */}
       <div className="mt-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
             Contenuti ({contents.length})
           </h2>
         </div>
@@ -231,7 +231,7 @@ export default async function PlanningPage({
 
                   <div className="flex flex-1 flex-col gap-2 p-4">
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="line-clamp-2 text-sm font-semibold text-slate-900">
+                      <h3 className="line-clamp-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                         {c.title ?? "Senza titolo"}
                       </h3>
                       <StatusBadge status={c.status} className="shrink-0" />

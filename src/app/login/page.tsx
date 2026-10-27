@@ -38,7 +38,7 @@ export default function LoginPage() {
         onSubmit={onSubmit}
         className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
       >
-        <h1 className="mb-1 text-lg font-semibold text-slate-900">Area riservata</h1>
+        <h1 className="mb-1 text-lg font-semibold text-slate-900 dark:text-slate-100">Area riservata</h1>
         <p className="mb-4 text-sm text-slate-500">Inserisci la password per continuare.</p>
         <input
           type="password"
@@ -46,7 +46,7 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
           autoFocus
-          className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-slate-500"
+          className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 dark:text-slate-100 outline-none focus:border-slate-500"
         />
         {error && <p className="mb-3 text-sm text-rose-600">{error}</p>}
         <button

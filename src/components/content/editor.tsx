@@ -265,7 +265,7 @@ export function ContentEditor({
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Torna alla pianificazione
           </Link>
-          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900">
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-slate-100">
             <TypeBadge type={content.type} />
             {title || "Senza titolo"}
             <StatusBadge status={content.status} />
@@ -412,7 +412,7 @@ export function ContentEditor({
                         />
                       ) : null}
                       {s.title ? (
-                        <div className="text-sm font-medium text-slate-800">
+                        <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
                           {s.title}
                         </div>
                       ) : null}
@@ -510,7 +510,7 @@ export function ContentEditor({
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-500">Data pianificata</span>
-                <span className="font-medium text-slate-800">
+                <span className="font-medium text-slate-800 dark:text-slate-200">
                   {content.scheduledDate
                     ? formatDate(content.scheduledDate, "dd/MM/yyyy HH:mm")
                     : "Non programmato"}
@@ -552,7 +552,7 @@ export function ContentEditor({
           <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-gradient-to-br from-sky-50 to-white p-4">
             <ImageIcon className="mt-0.5 h-4 w-4 shrink-0 text-sky-500" />
             <p className="text-xs text-slate-600">
-              <span className="font-semibold text-slate-800">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
                 Suggerimento:
               </span>{" "}
               compila i campi qui sopra e, quando sei pronto, approva per

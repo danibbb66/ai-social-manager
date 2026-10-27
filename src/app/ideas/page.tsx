@@ -47,7 +47,7 @@ export default async function IdeasPage() {
                     <Lightbulb className="h-4 w-4" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-slate-800">
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                       {idea.title}
                     </h3>
                     {idea.topic ? (

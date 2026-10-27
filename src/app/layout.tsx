@@ -11,12 +11,23 @@ export const metadata: Metadata = {
     "Gestione contenuti social per agenzia di viaggi con AI locale (Ollama)",
 };
 
+const themeInit = `
+(function () {
+  try {
+    if (localStorage.getItem('theme') === 'dark') {
+      document.documentElement.classList.add('dark');
+    }
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="it">
+    <html lang="it" suppressHydrationWarning>
       <body className="antialiased">
+        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
         <div className="flex min-h-screen">
           <Sidebar />
           <main className="flex-1 min-w-0 px-4 py-6 sm:px-8 lg:px-10">

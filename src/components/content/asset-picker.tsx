@@ -149,7 +149,7 @@ export function AssetPicker({
                     ) : null}
                   </div>
                   <div className="space-y-1 bg-white p-2">
-                    <p className="truncate text-[11px] font-medium text-slate-700">
+                    <p className="truncate text-[11px] font-medium text-slate-700 dark:text-slate-300">
                       {a.filename}
                     </p>
                     {a.content ? (

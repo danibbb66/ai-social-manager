@@ -32,7 +32,7 @@ export default async function DashboardPage() {
     return (
       <div className="mx-auto max-w-6xl">
         <div className="mb-6">
-          <h1 className="text-xl font-bold text-slate-900">Dashboard</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
           <p className="mt-0.5 text-sm text-slate-500">
             Panoramica della gestione social.
           </p>
@@ -106,7 +106,7 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-6xl">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Dashboard</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
           <p className="mt-0.5 text-sm text-slate-500">
             Crea i contenuti, poi gestisci e approva tutto da Contenuti.
           </p>
@@ -131,9 +131,9 @@ export default async function DashboardPage() {
                 >
                   <Icon className="h-4 w-4" />
                 </div>
-                <div className="text-2xl font-bold text-slate-900">{c.value}</div>
+                <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{c.value}</div>
               </div>
-              <div className="text-sm font-medium text-slate-800">{c.label}</div>
+              <div className="text-sm font-medium text-slate-800 dark:text-slate-200">{c.label}</div>
               <div className="text-xs text-slate-500">{c.hint}</div>
             </Link>
           );
@@ -155,7 +155,7 @@ export default async function DashboardPage() {
                 <Icon className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-lg font-bold text-slate-900">{c.value}</div>
+                <div className="text-lg font-bold text-slate-900 dark:text-slate-100">{c.value}</div>
                 <div className="truncate text-xs text-slate-500">{c.label}</div>
               </div>
             </Link>

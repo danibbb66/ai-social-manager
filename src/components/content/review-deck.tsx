@@ -561,7 +561,7 @@ export function ReviewDeck({
           </div>
 
           <div className="flex flex-1 flex-col gap-3 p-5">
-            <h2 className="text-base font-semibold text-slate-900">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               {current.title ?? "Senza titolo"}
             </h2>
 

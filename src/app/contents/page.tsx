@@ -367,7 +367,7 @@ export default async function ContentsPage({
 
                 <div className="flex flex-1 flex-col gap-2 p-4">
                   <div className="flex items-start justify-between gap-2">
-                    <h2 className="line-clamp-2 text-sm font-semibold text-slate-900 group-hover:text-sky-700">
+                    <h2 className="line-clamp-2 text-sm font-semibold text-slate-900 dark:text-slate-100 group-hover:text-sky-700">
                       {c.title ?? "Senza titolo"}
                     </h2>
                     <StatusBadge status={c.status} className="shrink-0" />
@@ -434,7 +434,7 @@ export default async function ContentsPage({
                       <td className="px-5 py-3">
                         <Link
                           href={`/contents/${c.id}`}
-                          className="block font-medium text-slate-800 hover:text-sky-700"
+                          className="block font-medium text-slate-800 dark:text-slate-200 hover:text-sky-700"
                         >
                           <span className="block max-w-56 truncate">
                             {c.title ?? "Senza titolo"}

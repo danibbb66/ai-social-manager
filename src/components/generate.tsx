@@ -70,7 +70,7 @@ export function GenerateStudio({
     <div className="mx-auto max-w-6xl">
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900">
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-slate-100">
             <Sparkles className="h-5 w-5 text-sky-600" />
             Crea video e post
           </h1>
@@ -85,7 +85,7 @@ export function GenerateStudio({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Cerca destinazione…"
-            className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+            className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
           />
         </div>
       </div>
@@ -107,7 +107,7 @@ export function GenerateStudio({
             return (
               <Card key={d.slug} className="flex flex-col gap-3 p-4">
                 <div>
-                  <div className="text-base font-semibold text-slate-900">
+                  <div className="text-base font-semibold text-slate-900 dark:text-slate-100">
                     {d.name}
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1.5">

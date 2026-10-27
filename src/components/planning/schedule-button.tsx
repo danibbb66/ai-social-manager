@@ -110,7 +110,7 @@ export function ScheduleButton({
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-sm font-semibold capitalize text-slate-800">
+              <span className="text-sm font-semibold capitalize text-slate-800 dark:text-slate-200">
                 {format(viewport, "MMMM yyyy", { locale: it })}
               </span>
               <button
@@ -146,7 +146,7 @@ export function ScheduleButton({
                     className={cn(
                       "flex h-8 items-center justify-center rounded-md text-sm transition-colors",
                       !inMonth && "text-slate-300",
-                      inMonth && "text-slate-700 hover:bg-sky-50 hover:text-sky-700",
+                      inMonth && "text-slate-700 dark:text-slate-300 hover:bg-sky-50 hover:text-sky-700",
                       today && "font-bold text-sky-600",
                       isScheduled && "bg-sky-600 font-semibold text-white hover:bg-sky-700 hover:text-white"
                     )}

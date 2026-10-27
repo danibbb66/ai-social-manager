@@ -156,7 +156,7 @@ export function AssetCard({
         </button>
 
         <div className="flex flex-1 flex-col gap-2 p-3">
-          <p className="truncate text-xs font-medium text-slate-800" title={asset.filename}>
+          <p className="truncate text-xs font-medium text-slate-800 dark:text-slate-200" title={asset.filename}>
             {asset.filename}
           </p>
 
@@ -298,19 +298,19 @@ export function AssetCard({
           <dl className="grid grid-cols-2 gap-3 text-xs">
             <div>
               <dt className="text-slate-400">Tipo</dt>
-              <dd className="font-medium text-slate-700">{asset.kind}</dd>
+              <dd className="font-medium text-slate-700 dark:text-slate-300">{asset.kind}</dd>
             </div>
             <div>
               <dt className="text-slate-400">Dimensione</dt>
-              <dd className="font-medium text-slate-700">{size ?? "—"}</dd>
+              <dd className="font-medium text-slate-700 dark:text-slate-300">{size ?? "—"}</dd>
             </div>
             <div>
               <dt className="text-slate-400">MIME</dt>
-              <dd className="font-medium text-slate-700">{asset.mimeType ?? "—"}</dd>
+              <dd className="font-medium text-slate-700 dark:text-slate-300">{asset.mimeType ?? "—"}</dd>
             </div>
             <div>
               <dt className="text-slate-400">Caricato il</dt>
-              <dd className="font-medium text-slate-700">{formatDate(asset.createdAt)}</dd>
+              <dd className="font-medium text-slate-700 dark:text-slate-300">{formatDate(asset.createdAt)}</dd>
             </div>
             <div className="col-span-2">
               <dt className="text-slate-400">URL</dt>

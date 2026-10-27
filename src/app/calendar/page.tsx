@@ -75,7 +75,7 @@ export default async function CalendarPage({
             >
               <ChevronLeft className="h-4 w-4" />
             </LinkButton>
-            <span className="min-w-36 text-center text-sm font-semibold text-slate-700">
+            <span className="min-w-36 text-center text-sm font-semibold text-slate-700 dark:text-slate-300">
               {format(current, "MMMM yyyy", { locale: it })}
             </span>
             <LinkButton
@@ -122,7 +122,7 @@ export default async function CalendarPage({
                     today
                       ? "bg-sky-600 text-white"
                       : inMonth
-                        ? "text-slate-700"
+                        ? "text-slate-700 dark:text-slate-300"
                         : "text-slate-400"
                   )}
                 >
@@ -175,7 +175,7 @@ export default async function CalendarPage({
       </Card>
 
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-        <span className="font-medium text-slate-700">Legenda:</span>
+        <span className="font-medium text-slate-700 dark:text-slate-300">Legenda:</span>
         <StatusBadge status="SCHEDULED" />
         <StatusBadge status="PUBLISHED" />
       </div>

@@ -83,7 +83,7 @@ export default async function SocialPage() {
                     className="flex items-center justify-between gap-3 px-5 py-4"
                   >
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 font-medium text-slate-800">
+                      <div className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-200">
                         {a.name}
                         {!a.active ? (
                           <Badge className="bg-slate-100 text-slate-500 border-slate-200">

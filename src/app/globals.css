@@ -1,12 +1,25 @@
 @import "tailwindcss";
 
+/* Dark mode pilotato a mano (toggle), non da prefers-color-scheme. */
+@custom-variant dark (&:is(.dark *));
+
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;
 }
 
+.dark {
+  --background: #0a0f1a;
+  --foreground: #e2e8f0;
+  color-scheme: dark;
+}
+
 * {
   border-color: theme(--color-slate-200);
+}
+
+.dark * {
+  border-color: theme(--color-slate-800);
 }
 
 html,

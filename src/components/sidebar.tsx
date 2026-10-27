@@ -14,6 +14,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type NavItem = { href: string; label: string; icon: typeof FileText; hub?: boolean };
 
@@ -51,11 +52,11 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
         active
-          ? "bg-sky-50 text-sky-700"
-          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+          ? "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100",
         // L'hub editoriale è evidenziato anche da spento: è la sezione da cui
         // passa tutto il lavoro sui contenuti.
-        item.hub && !active && "text-slate-900"
+        item.hub && !active && "text-slate-900 dark:text-slate-100"
       )}
     >
       <Icon className="h-4 w-4 shrink-0" />
@@ -68,31 +69,35 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-60 shrink-0 border-r border-slate-200 bg-white sticky top-0 self-start h-screen overflow-y-auto">
+    <aside className="w-60 shrink-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 sticky top-0 self-start h-screen overflow-y-auto">
       <div className="flex items-center gap-2.5 px-5 pt-5 pb-6">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-600 text-white">
           <Plane className="h-5 w-5" />
         </div>
         <div className="leading-tight">
-          <div className="text-sm font-bold text-slate-900">Social Manager</div>
-          <div className="text-xs text-slate-500">Agenzia di viaggi</div>
+          <div className="text-sm font-bold text-slate-900 dark:text-white">Social Manager</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Agenzia di viaggi</div>
         </div>
       </div>
 
       <nav className="space-y-1 px-3 pb-6">
-        <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
           Principale
         </div>
         {PRIMARY_NAV.map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />
         ))}
 
-        <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
           Configurazione
         </div>
         {SETTINGS_NAV.map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />
         ))}
+
+        <div className="mt-5 border-t border-slate-100 px-3 pt-3 dark:border-slate-800">
+          <ThemeToggle />
+        </div>
       </nav>
     </aside>
   );

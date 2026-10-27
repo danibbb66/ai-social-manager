@@ -37,7 +37,7 @@ export function ApprovalHistoryRow({
         </Badge>
         <Link
           href={`/contents/${approval.content.id}`}
-          className="ml-2 text-sm font-medium text-slate-800 hover:text-sky-700"
+          className="ml-2 text-sm font-medium text-slate-800 dark:text-slate-200 hover:text-sky-700"
         >
           {approval.content.title ?? "Senza titolo"}
           <span className="ml-1 font-normal text-slate-400">
