@@ -1,4 +1,5 @@
 import { listKeys } from "@/lib/storage";
+import { prisma } from "@/lib/prisma";
 
 /**
  * Lettura delle cartelle "curate" (media selezionati a mano dall'utente).
@@ -62,6 +63,56 @@ export interface CuratedDestination {
   name: string;
   photoCount: number;
   videoCount: number;
+  /** Foto ancora NON usate da nessun contenuto (quelle realmente disponibili). */
+  remainingPhotoCount: number;
+  /** Clip ancora NON usate da nessun contenuto. */
+  remainingVideoCount: number;
+}
+
+/** Chiavi delle foto curate già usate da contenuti esistenti (per il dedup). */
+export async function usedCuratedPhotoKeys(): Promise<Set<string>> {
+  const keys = new Set<string>();
+  try {
+    const assets = await prisma.contentAsset.findMany({
+      where: { kind: "IMAGE" },
+      select: { metadata: true },
+      take: 1000,
+    });
+    for (const a of assets) {
+      const meta = (a.metadata ?? {}) as { provider?: unknown; sourceUrl?: unknown };
+      // La chiave curata è salvata in `sourceUrl` solo per le foto di origine
+      // `curated`: le `sourceUrl` delle foto stock sono URL remoti, non chiavi.
+      if (meta.provider === "curated" && typeof meta.sourceUrl === "string" && meta.sourceUrl) {
+        keys.add(meta.sourceUrl);
+      }
+    }
+  } catch {
+    // errore di lettura: nessun filtro, la generazione prosegue comunque
+  }
+  return keys;
+}
+
+/** Chiavi delle clip video curate già usate da contenuti esistenti (per il dedup). */
+export async function usedCuratedVideoKeys(): Promise<Set<string>> {
+  const keys = new Set<string>();
+  try {
+    const assets = await prisma.contentAsset.findMany({
+      where: { kind: "VIDEO" },
+      select: { metadata: true },
+      take: 1000,
+    });
+    for (const a of assets) {
+      const meta = (a.metadata ?? {}) as { curatedKeys?: unknown };
+      if (Array.isArray(meta.curatedKeys)) {
+        for (const k of meta.curatedKeys) {
+          if (typeof k === "string" && k) keys.add(k);
+        }
+      }
+    }
+  } catch {
+    // errore di lettura: nessun filtro, la generazione prosegue comunque
+  }
+  return keys;
 }
 
 /**
@@ -81,6 +132,11 @@ export async function listCuratedDestinations(): Promise<CuratedDestination[]> {
     }
   }
 
+  const [usedPhotos, usedVideos] = await Promise.all([
+    usedCuratedPhotoKeys(),
+    usedCuratedVideoKeys(),
+  ]);
+
   const out: CuratedDestination[] = [];
   for (const slug of slugs) {
     const [photos, videos] = await Promise.all([
@@ -92,6 +148,8 @@ export async function listCuratedDestinations(): Promise<CuratedDestination[]> {
       name: curatedDestinationName(slug),
       photoCount: photos.length,
       videoCount: videos.length,
+      remainingPhotoCount: photos.filter((k) => !usedPhotos.has(k)).length,
+      remainingVideoCount: videos.filter((k) => !usedVideos.has(k)).length,
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name, "it"));

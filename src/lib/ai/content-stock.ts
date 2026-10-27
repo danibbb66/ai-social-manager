@@ -12,7 +12,7 @@ import { sceneForTopic, scenePromptFor } from "@/lib/ai/topic-visual";
 import { kickerForFormat } from "@/lib/ai/format-kicker";
 import { editorialPoints } from "@/lib/ai/editorial-matrix";
 import { curatedFolderSlug, videoSearch } from "@/lib/ai/travel-knowledge";
-import { listCuratedPhotos } from "@/lib/curated/media";
+import { listCuratedPhotos, usedCuratedPhotoKeys } from "@/lib/curated/media";
 import { createAsset, linkAsset, listAssets } from "@/lib/services/media";
 import { saveUploadedFile, sniffMediaMime, uploadedFileExists, deleteUploadedFile } from "@/lib/uploads";
 import { logAudit } from "@/lib/audit";
@@ -581,13 +581,20 @@ export async function attachStockVisual(input: {
   if (!buffer && curatedSlug) {
     const curatedPhotos = await listCuratedPhotos(curatedSlug);
     if (curatedPhotos.length > 0) {
-      const picked = curatedPhotos[Math.floor(Math.random() * curatedPhotos.length)];
-      try {
-        buffer = await readFileBuffer(picked);
-        source = "curated";
-        originalFilename = path.basename(picked);
-      } catch (e) {
-        logAIError("curated.photo.read", { slug: curatedSlug, path: picked }, e);
+      // Dedup: salta le foto curate già usate da un altro contenuto, così ogni
+      // post mostra una scena nuova e non ripete la stessa immagine.
+      const usedKeys = await usedCuratedPhotoKeys();
+      const available = curatedPhotos.filter((k) => !usedKeys.has(k));
+      const picked = available[Math.floor(Math.random() * available.length)];
+      if (picked) {
+        try {
+          buffer = await readFileBuffer(picked);
+          source = "curated";
+          sourceUrl = picked;
+          originalFilename = path.basename(picked);
+        } catch (e) {
+          logAIError("curated.photo.read", { slug: curatedSlug, path: picked }, e);
+        }
       }
     }
   }

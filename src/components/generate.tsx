@@ -113,11 +113,11 @@ export function GenerateStudio({
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     <Badge className="bg-sky-50 text-sky-600 border-sky-200">
                       <ImageIcon className="mr-1 h-3 w-3" />
-                      {d.photoCount} foto
+                      {d.remainingPhotoCount} foto
                     </Badge>
                     <Badge className="bg-violet-50 text-violet-600 border-violet-200">
                       <Clapperboard className="mr-1 h-3 w-3" />
-                      {d.videoCount} clip
+                      {d.remainingVideoCount} clip
                     </Badge>
                   </div>
                 </div>
@@ -126,16 +126,16 @@ export function GenerateStudio({
                   <div className="flex gap-2">
                     <Button
                       size="sm"
-                      variant={d.videoCount === 0 ? "secondary" : "primary"}
-                      disabled={s?.kind === "busy" || d.videoCount === 0}
+                      variant={d.remainingVideoCount === 0 ? "secondary" : "primary"}
+                      disabled={s?.kind === "busy" || d.remainingVideoCount === 0}
                       title={
-                        d.videoCount === 0
-                          ? "Clip esaurite: ricarica la cartella public/curated/videos con nuovi video"
+                        d.remainingVideoCount === 0
+                          ? "Clip già usate: ricarica la cartella public/curated/videos con nuovi video"
                           : "Genera il video"
                       }
                       onClick={() => runVideo(d)}
                       className={
-                        d.videoCount === 0 ? "flex-1 border-dashed text-slate-400" : "flex-1"
+                        d.remainingVideoCount === 0 ? "flex-1 border-dashed text-slate-400" : "flex-1"
                       }
                     >
                       {s?.kind === "busy" && openPost !== d.slug ? (
@@ -143,24 +143,24 @@ export function GenerateStudio({
                       ) : (
                         <Clapperboard className="h-4 w-4" />
                       )}
-                      {d.videoCount === 0 ? "Esaurito" : "Video"}
+                      {d.remainingVideoCount === 0 ? "Esaurito" : "Video"}
                     </Button>
                     <Button
                       size="sm"
                       variant="secondary"
-                      disabled={s?.kind === "busy" || d.photoCount === 0}
+                      disabled={s?.kind === "busy" || d.remainingPhotoCount === 0}
                       title={
-                        d.photoCount === 0
-                          ? "Foto esaurite: ricarica la cartella public/curated/photos con nuove foto"
+                        d.remainingPhotoCount === 0
+                          ? "Foto già usate: ricarica la cartella public/curated/photos con nuove foto"
                           : "Genera il post"
                       }
                       onClick={() => setOpenPost(isOpen ? null : d.slug)}
                       className={
-                        d.photoCount === 0 ? "flex-1 border-dashed text-slate-400" : "flex-1"
+                        d.remainingPhotoCount === 0 ? "flex-1 border-dashed text-slate-400" : "flex-1"
                       }
                     >
                       <ImageIcon className="h-4 w-4" />
-                      {d.photoCount === 0 ? "Esaurito" : "Post"}
+                      {d.remainingPhotoCount === 0 ? "Esaurito" : "Post"}
                     </Button>
                   </div>
 

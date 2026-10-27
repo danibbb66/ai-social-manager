@@ -8,7 +8,7 @@ import type { StockVideoProvider } from "@/lib/video/stock";
 import { getPexelsVideoProvider } from "@/lib/video/pexels";
 import { getPixabayVideoProvider } from "@/lib/video/pixabay";
 import { curatedFolderSlug, landmarkQueries, videoSearch } from "@/lib/ai/travel-knowledge";
-import { listCuratedVideos } from "@/lib/curated/media";
+import { listCuratedVideos, usedCuratedVideoKeys } from "@/lib/curated/media";
 import { getStockProvider } from "@/lib/images/factory";
 import { downloadRemoteImage } from "@/lib/images/remote";
 import { deleteUploadedFile, saveUploadedFile, uploadedFileExists } from "@/lib/uploads";
@@ -367,7 +367,8 @@ function significantTitleSubjects(
  */
 async function collectCuratedVideoClips(
   query: string | null | undefined,
-  limit: number
+  limit: number,
+  usedKeys: Set<string>
 ): Promise<VideoFrameSource[]> {
   if (!query?.trim()) return [];
   const slug = curatedFolderSlug(query);
@@ -376,6 +377,8 @@ async function collectCuratedVideoClips(
   const out: VideoFrameSource[] = [];
   for (const file of files) {
     if (out.length >= limit) break;
+    // Dedup: salta le clip curate già usate da un altro video.
+    if (usedKeys.has(file)) continue;
     out.push({ url: file, origin: "curated", hasOverlay: false });
   }
   return out;
@@ -1037,7 +1040,8 @@ export async function generateVideoForContent(input: {
   // integrazione, mai come fonte primaria (crediti limitati).
   // Con CURATED_MEDIA_ONLY=true il reel usa ESCLUSIVAMENTE le clip curate:
   // Pixabay/Pexels/Magnific e la Media Library non vengono toccati.
-  const curatedClips = await collectCuratedVideoClips(input.query, 6);
+  const usedCuratedKeys = await usedCuratedVideoKeys();
+  const curatedClips = await collectCuratedVideoClips(input.query, 6, usedCuratedKeys);
   const stockClips =
     config.curatedMediaOnly || curatedClips.length >= 6
       ? []
@@ -1068,6 +1072,13 @@ export async function generateVideoForContent(input: {
       stockLocalPaths[String(c.resourceId)] = c.url;
     }
   }
+
+  // Chiavi delle clip CURATE usate in questo montaggio: le generazioni
+  // successive le saltano, così ogni reel mostra scene nuove. La chiave di
+  // storage (`curated/videos/<slug>/<file>`) è l'identità stabile del file.
+  const usedCuratedUrls = videoClips
+    .filter((c) => c.origin === "curated" && c.url)
+    .map((c) => c.url);
 
   // Fallback fotografico: quando non ci sono clip video reali (Magnific è un
   // archivio di FOTO), le fotografie della destinazione diventano i fotogrammi
@@ -1185,11 +1196,15 @@ export async function generateVideoForContent(input: {
       kind: "VIDEO",
       contentId: content.id,
       metadata:
-        usedStockUrls.length > 0 || usedStockIds.length > 0 || Object.keys(stockLocalPaths).length > 0
+        usedStockUrls.length > 0 ||
+        usedStockIds.length > 0 ||
+        Object.keys(stockLocalPaths).length > 0 ||
+        usedCuratedUrls.length > 0
           ? {
               ...(usedStockUrls.length > 0 ? { stockSourceUrls: usedStockUrls } : {}),
               ...(usedStockIds.length > 0 ? { stockSourceIds: usedStockIds } : {}),
               ...(Object.keys(stockLocalPaths).length > 0 ? { stockLocalPaths } : {}),
+              ...(usedCuratedUrls.length > 0 ? { curatedKeys: usedCuratedUrls } : {}),
             }
           : undefined,
     });
