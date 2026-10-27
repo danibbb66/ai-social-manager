@@ -6,8 +6,6 @@ import {
   STATUS_META,
   TYPE_META,
   PLATFORM_LABELS,
-  CATALOG_STATUS_META,
-  CATALOG_CONFIDENCE_META,
 } from "@/lib/status";
 
 export function Card({
@@ -264,48 +262,6 @@ export function PlatformBadge({
       )}
     >
       {label}
-    </Badge>
-  );
-}
-
-/** Stato del catalogo (DRAFT / ACTIVE / EXPIRED / WITHDRAWN). */
-export function CatalogStatusBadge({
-  status,
-  className,
-}: {
-  status: string;
-  className?: string;
-}) {
-  const meta =
-    CATALOG_STATUS_META[status as keyof typeof CATALOG_STATUS_META] ??
-    CATALOG_STATUS_META.DRAFT;
-  return (
-    <Badge className={cn(meta.badge, className)}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
-      {meta.label}
-    </Badge>
-  );
-}
-
-/**
- * Affidabilità della proposta di catalogo.
- * VERIFIED è l'unico livello che autorizza a citare dati commerciali.
- */
-export function CatalogConfidenceBadge({
-  confidence,
-  className,
-}: {
-  confidence: string;
-  className?: string;
-}) {
-  const meta =
-    CATALOG_CONFIDENCE_META[
-      confidence as keyof typeof CATALOG_CONFIDENCE_META
-    ] ?? CATALOG_CONFIDENCE_META.UNVERIFIED;
-  return (
-    <Badge className={cn(meta.badge, className)}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
-      {meta.label}
     </Badge>
   );
 }

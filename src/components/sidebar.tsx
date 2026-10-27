@@ -11,7 +11,6 @@ import {
   Share2,
   Settings,
   Plane,
-  BookOpen,
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,15 +25,6 @@ const PRIMARY_NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/generate", label: "Crea video & post", icon: Sparkles, hub: true },
   { href: "/planning", label: "Pianificazione", icon: CalendarDays, hub: true },
-];
-
-/**
- * Catalogo: la fonte da cui i contenuti potranno attingere.
- * Isolato in un gruppo proprio perché non è né un flusso editoriale né una
- * configurazione: è la base dati commerciale che va consultata a parte.
- */
-const CATALOG_NAV: NavItem[] = [
-  { href: "/catalog", label: "Catalogo Agenzia", icon: BookOpen },
 ];
 
 /**
@@ -94,13 +84,6 @@ export function Sidebar() {
           Principale
         </div>
         {PRIMARY_NAV.map((item) => (
-          <NavLink key={item.href} item={item} pathname={pathname} />
-        ))}
-
-        <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-          Catalogo
-        </div>
-        {CATALOG_NAV.map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} />
         ))}
 

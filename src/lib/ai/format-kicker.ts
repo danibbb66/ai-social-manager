@@ -29,7 +29,17 @@
  * un'etichetta che va a capo non distingue più niente.
  */
 
-import type { ContentFormat } from "@/lib/ai/catalog-content";
+/**
+ * I formati editoriali dei post. Il tipo vive qui (e non più nel modulo
+ * catalogo, ora rimosso) perché la rubrichetta di formato ne è l'unico
+ * consumatore rimasto nel flusso dei post.
+ */
+export type ContentFormat =
+  | "HERO_DESTINATION"
+  | "TRAVEL_TIPS"
+  | "ITINERARY"
+  | "OFFER"
+  | "FAQ";
 
 /**
  * Occhiello per formato, o `null` se il formato non ne ha bisogno.

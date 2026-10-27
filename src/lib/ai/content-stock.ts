@@ -8,7 +8,6 @@ import {
 } from "@/lib/catalog/commercial-extraction";
 import { getBrandMark } from "@/lib/services/brand";
 import { placeNameFrom } from "@/lib/ai/place-name";
-import { isSupplierOriginal } from "@/lib/services/offer-creative";
 import { sceneForTopic, scenePromptFor } from "@/lib/ai/topic-visual";
 import { kickerForFormat } from "@/lib/ai/format-kicker";
 import { editorialPoints } from "@/lib/ai/editorial-matrix";
@@ -224,6 +223,18 @@ function cleanQuery(destination: string, topic?: string | null): string {
 // post generici e quelli nati da un'offerta di catalogo. Qui viene riesportata
 // perché è il posto in cui il post generico la usa.
 export { placeNameFrom } from "@/lib/ai/place-name";
+
+/**
+ * Riconosce un asset arrivato dal catalogo fornitore (locandina sorgente),
+ * che non va riutilizzato come fotogramma generico. Con il catalogo rimosso
+ * è una guardia simbolica: nessun nuovo asset nasce con questi marcatori, ma
+ * gli asset già in libreria li possono ancora avere.
+ */
+function isSupplierOriginal(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const m = metadata as Record<string, unknown>;
+  return m.origin === "catalog-flyer-source" || m.role === "SOURCE_FLYER";
+}
 
 /**
  * Estrazione commerciale neutra per il template.
