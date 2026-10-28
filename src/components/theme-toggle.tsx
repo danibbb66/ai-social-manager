@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Toggle tema chiaro/scuro. Lo stato vive sull'elemento `<html>` (classe
- * `.dark`) e persiste in `localStorage.theme`; il colore di sfondo/testo del
- * body segue le variabili CSS definite in globals.css.
+ * Interruttore tema chiaro/scuro in stile iOS (switch con manopola che scorre).
+ * Lo stato vive sull'elemento `<html>` (classe `.dark`) e persiste in
+ * `localStorage.theme`; il colore di sfondo/testo del body segue le variabili
+ * CSS definite in globals.css.
  */
 export function ThemeToggle({ className }: { className?: string }) {
   const [dark, setDark] = useState(false);
@@ -28,18 +28,30 @@ export function ThemeToggle({ className }: { className?: string }) {
   }
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={dark ? "Passa al tema chiaro" : "Passa al tema scuro"}
-      title={dark ? "Tema chiaro" : "Tema scuro"}
-      className={cn(
-        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100",
-        className
-      )}
-    >
-      {dark ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
-      {dark ? "Tema chiaro" : "Tema scuro"}
-    </button>
+    <div className={cn("flex items-center justify-between", className)}>
+      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+        Tema scuro
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={dark}
+        aria-label="Tema scuro"
+        onClick={toggle}
+        className={cn(
+          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200",
+          dark
+            ? "bg-sky-600"
+            : "bg-slate-300 dark:bg-slate-700"
+        )}
+      >
+        <span
+          className={cn(
+            "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200",
+            dark ? "translate-x-5" : "translate-x-0.5"
+          )}
+        />
+      </button>
+    </div>
   );
 }
