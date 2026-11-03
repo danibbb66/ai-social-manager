@@ -39,6 +39,10 @@ yarn-debug.log*
 # Media curati a mano (foto/video selezionati): pesanti, non in git
 public/curated/
 
+# Colonne sonore dei reel: pesanti, la fonte cloud è il bucket R2 (chiave audio/)
+public/audio/*
+!public/audio/.gitkeep
+
 # Artefatti di lavoro (anteprime/note di selezione WIP): non versionati
 public/curated-preview/
 curated-photos.selection.json

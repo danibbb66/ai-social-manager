@@ -908,15 +908,23 @@ function planScenes(frames: string[]): { imagePath: string; durationSec: number 
  *
  * Ordine di risoluzione:
  * 1. `VIDEO_MUSIC_FILE` (percorso assoluto o `/uploads/...`), se esiste;
- * 2. il primo asset `AUDIO` in Media Library con file ancora su disco;
- * 3. `null` → video senza audio (il provider degrada a `-an`).
+ * 2. rotazione automatica tra le tracce della chiave `audio/` (vedi sotto);
+ * 3. il primo asset `AUDIO` in Media Library con file ancora su disco;
+ * 4. `null` → video senza audio (il provider degrada a `-an`).
  *
  * Nessuna musica viene scaricata da Internet né hardcodata: senza una fonte
  * l'audio viene semplicemente omesso, senza rompere la generazione. La
  * risoluzione non deve MAI far fallire il reel: ogni errore interno ricade su
  * `null`.
  */
-async function resolveBackgroundMusic(): Promise<{ path: string | null; volume: number }> {
+/** Ogni "giro" completo di tracce sposta l'inizio della musica di 30s. */
+const AUDIO_ROTATION_STEP_SEC = 30;
+
+async function resolveBackgroundMusic(): Promise<{
+  path: string | null;
+  volume: number;
+  offsetSec: number;
+}> {
   const rawVolume = Number(process.env.VIDEO_MUSIC_VOLUME ?? "0.2");
   const volume = Number.isFinite(rawVolume) ? Math.min(1, Math.max(0, rawVolume)) : 0.2;
 
@@ -925,24 +933,45 @@ async function resolveBackgroundMusic(): Promise<{ path: string | null; volume: 
     try {
       const abs = await materialize(envFile);
       await fs.access(abs);
-      return { path: abs, volume };
+      return { path: abs, volume, offsetSec: 0 };
     } catch {
       console.warn(`[video] VIDEO_MUSIC_FILE non trovato su disco: ${envFile}`);
     }
   }
 
-  // Colonne sonore multiple (priorità): si scelgono a CASO tra TUTTI i file
-  // audio sotto la chiave `audio/` (.mp3/.m4a/.wav/.aac/.ogg). In locale è
-  // `public/audio/`, in cloud la stessa chiave nel bucket R2: l'utente carica
-  // le canzoni lì e ogni video usa una traccia diversa, senza toccare codice.
-  // Viene PRIMA degli asset AUDIO in Media Library (fallback finale).
+  // Colonne sonore multiple (priorità): ROTAZIONE deterministica tra TUTTI i
+  // file audio sotto la chiave `audio/` (.mp3/.m4a/.wav/.aac/.ogg). In locale
+  // è `public/audio/`, in cloud la stessa chiave nel bucket R2.
+  // Il video N-esimo usa la traccia (N % numero tracce); esaurito un giro
+  // completo, la musica parte AUDIO_ROTATION_STEP_SEC secondi più avanti, e
+  // così via: stessa playlist, punti di inizio sempre diversi. L'indice di
+  // rotazione è il numero di reel già generati (asset VIDEO sul DB), quindi
+  // dopo un reset dei contenuti la rotazione riparte da capo, in linea col
+  // riutilizzo dei media curati.
   try {
-    const keys = (await listKeys("audio")).filter((k) =>
-      /\.(m4a|mp3|wav|aac|ogg)$/i.test(k)
-    );
+    const keys = (await listKeys("audio"))
+      .filter((k) => /\.(m4a|mp3|wav|aac|ogg)$/i.test(k))
+      .sort();
     if (keys.length > 0) {
-      const picked = keys[Math.floor(Math.random() * keys.length)];
-      return { path: await materialize(picked), volume };
+      const videosGenerated = await prisma.contentAsset.count({
+        where: { kind: "VIDEO" },
+      });
+      const picked = keys[videosGenerated % keys.length];
+      const round = Math.floor(videosGenerated / keys.length);
+      const abs = await materialize(picked);
+
+      // Offset di partenza nella traccia: 0 al primo giro, 30s al secondo...
+      // Limitato alla durata reale (ffprobe) così l'audio copre sempre tutto
+      // il video; se la traccia è troppo corta si riparte da 0.
+      let offsetSec = round * AUDIO_ROTATION_STEP_SEC;
+      const duration = await probeVideoDurationSec(abs);
+      if (duration != null) {
+        const usable = Math.floor(duration - 16);
+        offsetSec = usable > 0 ? offsetSec % usable : 0;
+      } else {
+        offsetSec = 0;
+      }
+      return { path: abs, volume, offsetSec };
     }
   } catch {
     // nessuna traccia: si prosegue con il fallback qui sotto
@@ -956,13 +985,13 @@ async function resolveBackgroundMusic(): Promise<{ path: string | null; volume: 
     });
     for (const asset of audios) {
       if (!(await uploadedFileExists(asset.url))) continue;
-      return { path: await materialize(asset.url), volume };
+      return { path: await materialize(asset.url), volume, offsetSec: 0 };
     }
   } catch (e) {
     logAIError("video.audio.resolve", {}, e);
   }
 
-  return { path: null, volume };
+  return { path: null, volume, offsetSec: 0 };
 }
 
 export async function generateVideoForContent(input: {
@@ -1127,6 +1156,7 @@ export async function generateVideoForContent(input: {
         fps: 25,
         audioPath: audio.path,
         audioVolume: audio.volume,
+        audioOffsetSec: audio.offsetSec,
       });
     } else if (frames.length > 0) {
       generated = await provider.generateSlideshow(slidePlan, {
@@ -1135,6 +1165,7 @@ export async function generateVideoForContent(input: {
         fps: 25,
         audioPath: audio.path,
         audioVolume: audio.volume,
+        audioOffsetSec: audio.offsetSec,
       });
     } else {
       // Né clip video (stock/locali) né immagini: niente da montare.

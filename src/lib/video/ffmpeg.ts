@@ -437,6 +437,10 @@ export class FfmpegVideoProvider implements VideoProvider {
       Math.max(0, options?.audioVolume ?? DEFAULT_AUDIO_VOLUME)
     );
     if (audioPath) {
+      // `-ss` prima di `-i`: la musica parte dal secondo richiesto (rotazione
+      // playlist) invece che dall'inizio della traccia.
+      const offset = Math.max(0, options?.audioOffsetSec ?? 0);
+      if (offset > 0) args.push("-ss", offset.toFixed(3));
       args.push("-stream_loop", "-1", "-i", audioPath);
       filterParts.push(`[${slides.length}:a]volume=${audioVolume}[aout]`);
     }
@@ -645,6 +649,10 @@ export class FfmpegVideoProvider implements VideoProvider {
       Math.max(0, options?.audioVolume ?? DEFAULT_AUDIO_VOLUME)
     );
     if (audioPath) {
+      // `-ss` prima di `-i`: la musica parte dal secondo richiesto (rotazione
+      // playlist) invece che dall'inizio della traccia.
+      const offset = Math.max(0, options?.audioOffsetSec ?? 0);
+      if (offset > 0) args.push("-ss", offset.toFixed(3));
       args.push("-stream_loop", "-1", "-i", audioPath);
       filterParts.push(`[${nextInput}:a]volume=${audioVolume}[aout]`);
     }

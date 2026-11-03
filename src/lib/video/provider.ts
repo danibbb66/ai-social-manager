@@ -25,6 +25,11 @@ export interface VideoOptions {
    * Volume della musica di sottofondo (0..1). Default del provider: 0.2.
    */
   audioVolume?: number;
+  /**
+   * Secondo della traccia da cui far partire la musica (rotazione playlist:
+   * stessa canzone, punti di inizio diversi). Default: 0.
+   */
+  audioOffsetSec?: number;
 }
 
 export class VideoGenerationUnavailableError extends Error {
