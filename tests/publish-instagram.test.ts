@@ -209,7 +209,8 @@ describe("InstagramProvider (media URL pubblici)", () => {
     assert.equal(res.ok, true);
     assert.equal(res.externalId, "17900000000000003");
     assert.ok(called[0].includes(encodeURIComponent(`${PUBLIC_BASE}/uploads/videos/clip.mp4`)));
-    assert.match(called[0], /media_type=VIDEO/);
+    // Instagram API with Instagram Login: i video escono come REELS.
+    assert.match(called[0], /media_type=REELS/);
     assert.match(called[2], /media_publish/);
   });
 

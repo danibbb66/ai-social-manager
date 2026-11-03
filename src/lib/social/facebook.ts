@@ -2,6 +2,7 @@ import { Platform } from "@prisma/client";
 import { config, hasFacebook, publicBaseUrl } from "@/lib/env";
 import { redactSecrets } from "@/lib/security";
 import { PublishPayload, PublishResult, SocialProvider } from "@/lib/social/provider";
+import { formatGraphError } from "@/lib/social/graph-error";
 
 const GRAPH_URL = "https://graph.facebook.com/v26.0";
 
@@ -49,10 +50,19 @@ export class FacebookProvider implements SocialProvider {
   private async graph(path: string, params: Record<string, string>) {
     const url = `${GRAPH_URL}${path}?${new URLSearchParams(params)}`;
     const res = await fetch(url, { method: "POST" });
-    const json = (await res.json()) as { id?: string; error?: { message?: string } };
+    const json = (await res.json()) as {
+      id?: string;
+      error?: {
+        message?: string;
+        code?: number;
+        type?: string;
+        error_subcode?: number;
+        error_user_msg?: string;
+      };
+    };
     if (!res.ok || json.error) {
       throw new Error(
-        redactSecrets(`Facebook Graph API ${res.status}: ${json.error?.message ?? "unknown"}`)
+        redactSecrets(`Facebook Graph API ${res.status}: ${formatGraphError(json.error)}`)
       );
     }
     return json;

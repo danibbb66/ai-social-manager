@@ -2,6 +2,7 @@ import { Platform } from "@prisma/client";
 import { config, hasInstagram, publicBaseUrl } from "@/lib/env";
 import { redactSecrets } from "@/lib/security";
 import { PublishPayload, PublishResult, SocialProvider } from "@/lib/social/provider";
+import { formatGraphError } from "@/lib/social/graph-error";
 
 /**
  * Host dell'Instagram API with Instagram Login.
@@ -95,12 +96,18 @@ export class InstagramProvider implements SocialProvider {
     const res = await fetch(url, { method: "POST" });
     const json = (await res.json()) as {
       id?: string;
-      error?: { message?: string };
+      error?: {
+        message?: string;
+        code?: number;
+        type?: string;
+        error_subcode?: number;
+        error_user_msg?: string;
+      };
     };
     if (!res.ok || json.error) {
       throw new Error(
         redactSecrets(
-          `Instagram Graph API ${res.status}: ${json.error?.message ?? "unknown"}`
+          `Instagram Graph API ${res.status}: ${formatGraphError(json.error)}`
         )
       );
     }
@@ -143,14 +150,20 @@ export class InstagramProvider implements SocialProvider {
       const res = await fetch(url, { method: "GET" });
       const json = (await res.json().catch(() => null)) as {
         status_code?: string;
-        error?: { code?: number; message?: string };
+        error?: {
+          message?: string;
+          code?: number;
+          type?: string;
+          error_subcode?: number;
+          error_user_msg?: string;
+        };
       } | null;
 
       if (!res.ok || json?.error) {
         throw new Error(
           redactSecrets(
             `Instagram Graph API ${res.status} durante l'attesa del container ${label}: ${
-              json?.error?.message ?? "unknown"
+              formatGraphError(json?.error)
             }`
           )
         );
@@ -251,7 +264,9 @@ export class InstagramProvider implements SocialProvider {
         if (!finalUrl) return { ok: false, message: NO_PUBLIC_URL };
         const containerId = await this.createReadyContainer(
           {
-            media_type: "VIDEO",
+            // Sull'Instagram API with Instagram Login i video si pubblicano
+            // come REELS: media_type=VIDEO è rifiutato con "Invalid parameter".
+            media_type: "REELS",
             video_url: finalUrl,
             // Copertina esplicita (frame titolo+logo) invece del frame casuale
             // che Meta sceglierebbe da solo.
