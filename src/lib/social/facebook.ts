@@ -9,6 +9,30 @@ const GRAPH_URL = "https://graph.facebook.com/v26.0";
 const NO_PUBLIC_URL =
   "Per pubblicare su Facebook il media deve essere raggiungibile da Internet tramite una URL HTTPS pubblica. Imposta PUBLIC_APP_URL nel file .env con l'URL pubblico dell'app (es. https://tunnel.example.com) e riavvia il server.";
 
+type ThumbFile = { data: Blob; filename: string };
+
+/**
+ * Scarica la copertina del video per allegarla come file alla chiamata
+ * /videos. Meta rifiuta la copertina passata come URL con l'errore
+ * "(#100) Invalid image format. It should be an image file data": il
+ * parametro `thumb` accetta solo dati binari (multipart). Se il download
+ * fallisce si pubblica senza copertina e Facebook sceglie un frame del video.
+ */
+async function downloadThumb(url: string | null): Promise<ThumbFile | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const type = res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+    const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength === 0) return null;
+    return { data: new Blob([buf], { type }), filename: `copertina.${ext}` };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Converte l'URL di un media in una URL HTTPS pubblicamente raggiungibile dai
  * server di Meta. Gli URL già assoluti vengono restituiti invariati; i
@@ -45,6 +69,39 @@ export class FacebookProvider implements SocialProvider {
     if (!config.facebook.token) missing.push("FACEBOOK_PAGE_ACCESS_TOKEN");
     if (!config.facebook.pageId) missing.push("FACEBOOK_PAGE_ID");
     return missing;
+  }
+
+  /**
+   * POST multipart/form-data: usato per /videos, dove la copertina va
+   * allegata come file (`thumb`) invece che come URL. Gli altri parametri
+   * diventano campi del form.
+   */
+  private async graphForm(
+    path: string,
+    fields: Record<string, string>,
+    thumb: ThumbFile | null
+  ) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.append(key, value);
+    if (thumb) form.append("thumb", thumb.data, thumb.filename);
+
+    const res = await fetch(`${GRAPH_URL}${path}`, { method: "POST", body: form });
+    const json = (await res.json()) as {
+      id?: string;
+      error?: {
+        message?: string;
+        code?: number;
+        type?: string;
+        error_subcode?: number;
+        error_user_msg?: string;
+      };
+    };
+    if (!res.ok || json.error) {
+      throw new Error(
+        redactSecrets(`Facebook Graph API ${res.status}: ${formatGraphError(json.error)}`)
+      );
+    }
+    return json;
   }
 
   private async graph(path: string, params: Record<string, string>) {
@@ -85,14 +142,14 @@ export class FacebookProvider implements SocialProvider {
         if (!source) return { ok: false, message: "Nessun video da pubblicare." };
         const videoUrl = publicMediaUrl(source);
         if (!videoUrl) return { ok: false, message: NO_PUBLIC_URL };
-        // Copertina esplicita (frame titolo+logo) invece del frame casuale di Facebook.
-        const thumb = publicMediaUrl(payload.mediaUrls[0]);
-        const res = await this.graph(`/${pageId}/videos`, {
-          file_url: videoUrl,
-          ...(thumb ? { thumb } : {}),
-          description: message,
-          access_token: token,
-        });
+        // Copertina esplicita (frame titolo+logo): allegata come FILE perché
+        // Meta non accetta il thumb come URL (errore #100 Invalid image format).
+        const thumb = await downloadThumb(publicMediaUrl(payload.mediaUrls[0]));
+        const res = await this.graphForm(
+          `/${pageId}/videos`,
+          { file_url: videoUrl, description: message, access_token: token },
+          thumb
+        );
         return { ok: true, message: "Video pubblicato su Facebook.", externalId: res.id };
       }
 

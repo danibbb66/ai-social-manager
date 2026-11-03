@@ -32,6 +32,7 @@ const originalPageId = config.facebook.pageId;
 
 const createdIds: string[] = [];
 const calls: string[] = [];
+const bodies: Array<FormData | null> = [];
 
 type FetchStub = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -42,11 +43,13 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-/** Stub che registra ogni URL chiamato e risponde con un id fittizio. */
+/** Stub che registra ogni URL chiamato (e il body) e risponde con un id fittizio. */
 function stubFetch() {
   calls.length = 0;
-  (globalThis as { fetch: FetchStub }).fetch = async (input) => {
+  bodies.length = 0;
+  (globalThis as { fetch: FetchStub }).fetch = async (input, init) => {
     calls.push(String(input));
+    bodies.push(init?.body instanceof FormData ? init.body : null);
     return jsonResponse({ id: "123456789_000111" });
   };
 }
@@ -226,7 +229,33 @@ describe("FacebookProvider: senza URL pubblica la pubblicazione fallisce", () =>
     assert.equal(res.ok, true);
     assert.equal(calls.length, 1);
     assert.match(calls[0], /\/1000000001\/videos/);
-    assert.match(decodeURIComponent(calls[0]), /file_url=https:\/\/cdn\.example\.com\/videos\/reel\.mp4/);
+    // /videos ora è multipart: i parametri sono campi del form, non query string.
+    const form = bodies[0];
+    assert.ok(form instanceof FormData);
+    assert.equal(form.get("file_url"), "https://cdn.example.com/videos/reel.mp4");
+    assert.equal(form.get("thumb"), null, "senza copertina non si allega nessun thumb");
+  });
+
+  test("10b) video con copertina: il thumb viene scaricato e allegato come file", async () => {
+    stubFetch();
+    config.publicBaseUrl = "";
+
+    const res = await new FacebookProvider().publish(
+      payload({
+        contentType: "VIDEO" as ContentType,
+        videoUrl: "https://cdn.example.com/videos/reel.mp4",
+        mediaUrls: ["https://cdn.example.com/images/copertina.jpg"],
+      })
+    );
+
+    assert.equal(res.ok, true);
+    assert.equal(calls.length, 2, "download copertina + chiamata /videos");
+    assert.match(calls[0], /copertina\.jpg/);
+    assert.match(calls[1], /\/1000000001\/videos/);
+    const form = bodies[1];
+    assert.ok(form instanceof FormData);
+    const thumb = form.get("thumb");
+    assert.ok(thumb instanceof File, "il thumb deve essere un file allegato, non una URL");
   });
 
   test("11) video completamente assente mantiene il messaggio dedicato", async () => {
