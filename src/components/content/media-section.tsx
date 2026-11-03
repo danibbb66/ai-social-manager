@@ -126,13 +126,13 @@ export function ContentMediaSection({
     });
   };
 
-  const upload = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  const upload = (files: File[]) => {
+    if (files.length === 0) return;
     setUploading(true);
     setError(null);
     startWork(async () => {
       try {
-        const outcomes = await uploadFiles(Array.from(files), contentId);
+        const outcomes = await uploadFiles(files, contentId);
         const summary = uploadErrorSummary(outcomes);
         if (summary) setError(summary);
         router.refresh();
@@ -268,7 +268,10 @@ export function ContentMediaSection({
               className="sr-only"
               disabled={uploading || working}
               onChange={(e) => {
-                const files = e.target.files;
+                // Lista COPIATA prima dell'azzeramento: `e.target.files` è una
+                // FileList viva che `value = ""` svuota (come media-tools.tsx):
+                // senza la copia l'upload non partirebbe mai, in silenzio.
+                const files = Array.from(e.target.files ?? []);
                 // Azzeriamo il valore: senza questo, riselezionare lo stesso
                 // file non emette change e il secondo upload non parte mai.
                 e.target.value = "";

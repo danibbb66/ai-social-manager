@@ -368,11 +368,11 @@ export function UploadButton() {
   const router = useRouter();
   const [uploading, setUploading] = useState(false);
 
-  const doUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  const doUpload = async (files: File[]) => {
+    if (files.length === 0) return;
     setUploading(true);
     try {
-      const outcomes = await uploadFiles(Array.from(files));
+      const outcomes = await uploadFiles(files);
       const error = uploadErrorSummary(outcomes);
       // Un messaggio per file: niente più fallimenti silenziosi.
       if (error) alert(error);
@@ -404,7 +404,11 @@ export function UploadButton() {
         className="sr-only"
         disabled={uploading}
         onChange={(e) => {
-          const files = e.target.files;
+          // La lista va COPIATA prima di azzerare l'input: `e.target.files` è
+          // una FileList viva e `value = ""` la svuota, quindi catturarla dopo
+          // (o per riferimento) darebbe sempre 0 file e l'upload non partirebbe
+          // mai, senza alcun messaggio. L'array di File resta valido.
+          const files = Array.from(e.target.files ?? []);
           // Azzeriamo il valore: senza questo, riselezionare lo stesso file
           // non emette alcun evento change e il secondo upload non parte mai.
           e.target.value = "";
