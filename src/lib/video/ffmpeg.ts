@@ -16,6 +16,7 @@ import { accentForTitle } from "@/lib/images/social-creative";
 import ffmpegStatic from "ffmpeg-static";
 import { path as ffprobeStaticPath } from "ffprobe-static";
 import { materialize, outputDirFor, publishOutput } from "@/lib/storage";
+import { config } from "@/lib/env";
 import { APP_FONT_STACK } from "@/lib/fonts";
 
 /**
@@ -320,16 +321,15 @@ function buildEncodeArgs(hasAudio: boolean): string[] {
   } else {
     out.push("-an");
   }
-  // `-preset veryfast` accelera molto l'encoding rispetto al default "medium"
-  // (fondamentale su Vercel, dove la CPU del piano Hobby è limitata e la
-  // generazione deve restare sotto il timeout della funzione). La qualità a
-  // 1080x1920 resta ottima per i social; `-crf 23` (default) esplicitato per
-  // chiarezza.
+  // Il preset (default "ultrafast", vedi `config.videoPreset`) e la
+  // risoluzione bassa (720x1280) sono la combinazione che su Vercel Hobby
+  // (CPU condivisa, tetto di 60s) resta stabilmente sotto il timeout.
+  // `-crf 23` (default) esplicitato per chiarezza.
   out.push(
     "-c:v",
     "libx264",
     "-preset",
-    "veryfast",
+    config.videoPreset,
     "-crf",
     "23",
     "-pix_fmt",

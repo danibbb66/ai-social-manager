@@ -61,6 +61,18 @@ export const config = {
   imageProvider: process.env.IMAGE_PROVIDER ?? "manual",
   videoProvider: process.env.VIDEO_PROVIDER ?? "ffmpeg",
   /**
+   * Risoluzione verticale del reel e preset di encoding.
+   *
+   * Su Vercel Hobby (tetto di 60s per funzione, CPU condivisa) 720×1280 con
+   * preset "ultrafast" è l'unico abbinamento che resta stabilmente sotto il
+   * timeout: 1080×1920 a "veryfast" è al limite e a tratti sfocia in
+   * "caricamento infinito". Su un piano Pro o in locale si può alzare la
+   * qualità, es. VIDEO_WIDTH=1080 VIDEO_HEIGHT=1920 VIDEO_PRESET=veryfast.
+   */
+  videoWidth: Number(process.env.VIDEO_WIDTH ?? 720) || 720,
+  videoHeight: Number(process.env.VIDEO_HEIGHT ?? 1280) || 1280,
+  videoPreset: process.env.VIDEO_PRESET?.trim() || "ultrafast",
+  /**
    * "Solo media curati": se true, post e video usano ESCLUSIVAMENTE i file
    * selezionati a mano dall'utente in public/curated/{photos,videos}/<slug>/.
    * Pixabay, Pexels e Magnific non vengono MAI interrogati. Una destinazione

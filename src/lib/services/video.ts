@@ -1122,16 +1122,16 @@ export async function generateVideoForContent(input: {
         `[video] montaggio pianificato: ${montageClips.length} clip, ${montageClips.reduce((a, c) => a + c.sceneSeconds, 0)}s`
       );
       generated = await provider.generateMontage!(montageClips, {
-        width: 1080,
-        height: 1920,
+        width: config.videoWidth,
+        height: config.videoHeight,
         fps: 25,
         audioPath: audio.path,
         audioVolume: audio.volume,
       });
     } else if (frames.length > 0) {
       generated = await provider.generateSlideshow(slidePlan, {
-        width: 1080,
-        height: 1920,
+        width: config.videoWidth,
+        height: config.videoHeight,
         fps: 25,
         audioPath: audio.path,
         audioVolume: audio.volume,
