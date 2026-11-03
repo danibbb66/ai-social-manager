@@ -257,7 +257,7 @@ export function PlatformBadge({
   return (
     <Badge
       className={cn(
-        "bg-indigo-50 text-indigo-700 border-indigo-200",
+        "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800",
         className
       )}
     >

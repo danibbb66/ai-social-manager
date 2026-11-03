@@ -11,7 +11,7 @@ export const STATUS_META: Record<
   DRAFT: {
     label: "Bozza",
     color: "text-gray-600",
-    badge: "bg-gray-100 text-gray-700 border-gray-200",
+    badge: "bg-gray-100 text-gray-700 border-gray-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
     dot: "bg-gray-400",
   },
   // Stato legacy dormiente: non è più raggiungibile dal workflow applicativo.
@@ -20,37 +20,37 @@ export const STATUS_META: Record<
   REVIEW: {
     label: "Revisione (legacy)",
     color: "text-slate-500",
-    badge: "bg-slate-100 text-slate-600 border-slate-200",
+    badge: "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
     dot: "bg-slate-400",
   },
   APPROVED: {
     label: "Approvato",
     color: "text-emerald-700",
-    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800",
     dot: "bg-emerald-500",
   },
   SCHEDULED: {
     label: "Programmato",
     color: "text-sky-700",
-    badge: "bg-sky-50 text-sky-700 border-sky-200",
+    badge: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800",
     dot: "bg-sky-500",
   },
   PUBLISHED: {
     label: "Pubblicato",
     color: "text-violet-700",
-    badge: "bg-violet-50 text-violet-700 border-violet-200",
+    badge: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:border-violet-800",
     dot: "bg-violet-500",
   },
   REJECTED: {
     label: "Rifiutato",
     color: "text-red-700",
-    badge: "bg-red-50 text-red-700 border-red-200",
+    badge: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800",
     dot: "bg-red-500",
   },
   FAILED: {
     label: "Fallito",
     color: "text-red-800",
-    badge: "bg-red-100 text-red-800 border-red-300",
+    badge: "bg-red-100 text-red-800 border-red-300 dark:bg-red-950 dark:text-red-300 dark:border-red-800",
     dot: "bg-red-600",
   },
 };

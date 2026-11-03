@@ -33,7 +33,7 @@ export default async function DashboardPage() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-6">
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
+          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
             Panoramica della gestione social.
           </p>
         </div>
@@ -58,7 +58,7 @@ export default async function DashboardPage() {
       value: stats.pendingApproval,
       href: "/contents?view=approvals",
       icon: FileText,
-      color: "text-amber-600 bg-amber-100",
+      color: "text-amber-600 bg-amber-100 dark:text-amber-300 dark:bg-amber-950",
     },
     {
       label: "Programmati",
@@ -66,7 +66,7 @@ export default async function DashboardPage() {
       value: stats.counts.SCHEDULED ?? 0,
       href: "/calendar",
       icon: CalendarClock,
-      color: "text-sky-600 bg-sky-100",
+      color: "text-sky-600 bg-sky-100 dark:text-sky-300 dark:bg-sky-950",
     },
     {
       label: "Errori",
@@ -74,7 +74,7 @@ export default async function DashboardPage() {
       value: failed,
       href: "/contents?status=FAILED",
       icon: AlertTriangle,
-      color: "text-red-600 bg-red-100",
+      color: "text-red-600 bg-red-100 dark:text-red-300 dark:bg-red-950",
     },
   ];
 
@@ -84,21 +84,21 @@ export default async function DashboardPage() {
       value: stats.counts.APPROVED ?? 0,
       href: "/contents?status=APPROVED",
       icon: CheckCircle2,
-      color: "text-emerald-600 bg-emerald-100",
+      color: "text-emerald-600 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-950",
     },
     {
       label: "Pubblicati (30g)",
       value: stats.published30d,
       href: "/contents?status=PUBLISHED",
       icon: Rocket,
-      color: "text-violet-600 bg-violet-100",
+      color: "text-violet-600 bg-violet-100 dark:text-violet-300 dark:bg-violet-950",
     },
     {
       label: "Media caricati",
       value: stats.mediaCount,
       href: "/media",
       icon: ImageIcon,
-      color: "text-slate-600 bg-slate-100",
+      color: "text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-slate-800",
     },
   ];
 
@@ -107,7 +107,7 @@ export default async function DashboardPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
+          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
             Crea i contenuti, poi gestisci e approva tutto da Contenuti.
           </p>
         </div>
@@ -123,7 +123,7 @@ export default async function DashboardPage() {
             <Link
               key={c.label}
               href={c.href}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:border-sky-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:border-sky-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 dark:border-slate-800 dark:bg-slate-900"
             >
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div
@@ -134,7 +134,7 @@ export default async function DashboardPage() {
                 <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{c.value}</div>
               </div>
               <div className="text-sm font-medium text-slate-800 dark:text-slate-200">{c.label}</div>
-              <div className="text-xs text-slate-500">{c.hint}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{c.hint}</div>
             </Link>
           );
         })}
@@ -147,7 +147,7 @@ export default async function DashboardPage() {
             <Link
               key={c.label}
               href={c.href}
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-sky-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-sky-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
             >
               <div
                 className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${c.color}`}
@@ -156,7 +156,7 @@ export default async function DashboardPage() {
               </div>
               <div className="min-w-0">
                 <div className="text-lg font-bold text-slate-900 dark:text-slate-100">{c.value}</div>
-                <div className="truncate text-xs text-slate-500">{c.label}</div>
+                <div className="truncate text-xs text-slate-500 dark:text-slate-400">{c.label}</div>
               </div>
             </Link>
           );

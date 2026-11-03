@@ -36,7 +36,7 @@ export default function LoginPage() {
     <div className="flex min-h-[70vh] items-center justify-center px-4">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+        className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
       >
         <h1 className="mb-1 text-lg font-semibold text-slate-900 dark:text-slate-100">Area riservata</h1>
         <p className="mb-4 text-sm text-slate-500">Inserisci la password per continuare.</p>

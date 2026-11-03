@@ -254,7 +254,7 @@ export default async function ContentsPage({
           </form>
 
           {isDeck || isHistory ? null : (
-            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5">
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5 dark:border-slate-800 dark:bg-slate-900">
               {(["list", "grid"] as const).map((v) => (
                 <Link
                   key={v}
@@ -263,8 +263,8 @@ export default async function ContentsPage({
                   className={cn(
                     "rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors",
                     view === v
-                      ? "bg-sky-50 text-sky-700"
-                      : "text-slate-500 hover:bg-slate-50"
+                      ? "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+                      : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
                   )}
                 >
                   {v === "grid" ? "Griglia" : "Lista"}
@@ -344,9 +344,9 @@ export default async function ContentsPage({
               <Link
                 key={c.id}
                 href={`/contents/${c.id}`}
-                className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 dark:border-slate-800 dark:bg-slate-900"
               >
-                <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100">
+                <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
                   {first ? (
                     <MediaThumb asset={first} className="h-full w-full" />
                   ) : (
@@ -358,7 +358,7 @@ export default async function ContentsPage({
                     </span>
                   ) : null}
                   {c.assets.length === 0 ? (
-                    <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                    <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
                       <ImageOff className="h-3 w-3" />
                       Senza media
                     </span>
@@ -394,7 +394,7 @@ export default async function ContentsPage({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1 border-t border-slate-100 pt-2 text-[11px] text-slate-400">
+                  <div className="flex items-center gap-1 border-t border-slate-100 pt-2 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
                     <CalendarClock className="h-3.5 w-3.5" />
                     {c.status === "PUBLISHED"
                       ? "Pubblicato"
@@ -414,7 +414,7 @@ export default async function ContentsPage({
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <thead className="border-b border-slate-100 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-400">
                 <tr>
                   <th className="px-5 py-3 font-medium">Contenuto</th>
                   <th className="px-3 py-3 font-medium">Media</th>
@@ -425,12 +425,12 @@ export default async function ContentsPage({
                   <th className="px-5 py-3 font-medium">Aggiornato</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {contents.map((c) => {
                   const first =
                     c.assets.find((a) => a.kind === "IMAGE") ?? c.assets[0];
                   return (
-                    <tr key={c.id} className="hover:bg-slate-50">
+                    <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
                       <td className="px-5 py-3">
                         <Link
                           href={`/contents/${c.id}`}

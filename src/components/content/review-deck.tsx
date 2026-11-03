@@ -517,7 +517,7 @@ export function ReviewDeck({
           onClick={onClick}
           style={{ touchAction: "pan-y" }}
           className={cn(
-            "deck-card relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg select-none",
+            "deck-card relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg select-none dark:border-slate-800 dark:bg-slate-900",
             reduced && "deck-card-reduced"
           )}
         >

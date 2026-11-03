@@ -100,13 +100,13 @@ export function ScheduleButton({
             className="absolute inset-0 bg-slate-900/40"
             onClick={() => setOpen(false)}
           />
-          <div className="relative z-10 w-80 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl">
+          <div className="relative z-10 w-80 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
             <div className="mb-2 flex items-center justify-between">
               <button
                 type="button"
                 aria-label="Mese precedente"
                 onClick={() => setViewport((v) => addMonths(v, -1))}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -117,7 +117,7 @@ export function ScheduleButton({
                 type="button"
                 aria-label="Mese successivo"
                 onClick={() => setViewport((v) => addMonths(v, 1))}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -146,7 +146,7 @@ export function ScheduleButton({
                     className={cn(
                       "flex h-8 items-center justify-center rounded-md text-sm transition-colors",
                       !inMonth && "text-slate-300",
-                      inMonth && "text-slate-700 dark:text-slate-300 hover:bg-sky-50 hover:text-sky-700",
+                      inMonth && "text-slate-700 dark:text-slate-300 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-950 dark:hover:text-sky-300",
                       today && "font-bold text-sky-600",
                       isScheduled && "bg-sky-600 font-semibold text-white hover:bg-sky-700 hover:text-white"
                     )}

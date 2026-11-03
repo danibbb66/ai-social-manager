@@ -216,7 +216,7 @@ export default async function PlanningPage({
               return (
                 <div
                   key={c.id}
-                  className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:border-sky-300 hover:shadow-md"
+                  className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:border-sky-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
                 >
                   <Link
                     href={`/contents/${c.id}`}

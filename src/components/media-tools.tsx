@@ -145,7 +145,7 @@ export function AssetCard({
 
   return (
     <>
-      <div className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:border-sky-300 hover:shadow-md">
+      <div className="group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:border-sky-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
         <button
           type="button"
           onClick={() => setDetailOpen(true)}
