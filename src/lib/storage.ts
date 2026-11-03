@@ -265,13 +265,18 @@ export function outputDirFor(sub: string): string {
 export async function publishOutput(
   localPath: string,
   key: string,
-  contentType?: string
+  contentType?: string,
+  /** Se true (solo cloud), il file locale NON viene rimosso dopo l'upload:
+   * serve al chiamante per estrarre la locandina prima di ripulire. */
+  keepLocal = false
 ): Promise<string> {
   if (!isCloudStorage()) {
     return `/${toKey(key)}`;
   }
   const body = await fs.readFile(localPath);
   const url = await writeFile(key, body, contentType);
-  await fs.unlink(localPath).catch(() => undefined);
+  if (!keepLocal) {
+    await fs.unlink(localPath).catch(() => undefined);
+  }
   return url;
 }

@@ -480,7 +480,7 @@ export class FfmpegVideoProvider implements VideoProvider {
     }
 
     return {
-      url: await publishOutput(outFile, `uploads/videos/${path.basename(outFile)}`, "video/mp4"),
+      url: await publishOutput(outFile, `uploads/videos/${path.basename(outFile)}`, "video/mp4", true),
       provider: this.name,
       pathname: outFile,
       durationSec: total,
@@ -684,7 +684,7 @@ export class FfmpegVideoProvider implements VideoProvider {
     if (titlePngPath) await fs.rm(titlePngPath, { force: true }).catch(() => undefined);
 
     return {
-      url: await publishOutput(outFile, `uploads/videos/${path.basename(outFile)}`, "video/mp4"),
+      url: await publishOutput(outFile, `uploads/videos/${path.basename(outFile)}`, "video/mp4", true),
       provider: this.name,
       pathname: outFile,
       durationSec: Math.round(total),

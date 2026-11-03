@@ -1227,7 +1227,14 @@ export async function generateVideoForContent(input: {
     };
   }
 
-  const poster = await ensureVideoPoster(content.id);
+  const poster = await ensureVideoPoster(content.id, generated.pathname);
+
+  // In cloud il file video locale è stato trattenuto (keepLocal) solo per
+  // estrarre la locandina: ora che non serve più si rimuove dalla /tmp della
+  // funzione. In locale resta dov'è (è il file servito da /uploads/...).
+  if (isCloudStorage()) {
+    await fs.rm(generated.pathname, { force: true }).catch(() => undefined);
+  }
 
   await logAudit("VIDEO_GENERATED", "ContentAsset", asset.id, {
     contentId: content.id,
@@ -1256,7 +1263,12 @@ export async function generateVideoForContent(input: {
  * IMAGE con `metadata.role: "POSTER"`. Se il contenuto ha già un'immagine
  * quella fa da locandina e non viene scritto nulla.
  */
-export async function ensureVideoPoster(contentId: string): Promise<VideoPosterResult> {
+export async function ensureVideoPoster(
+  contentId: string,
+  /** Percorso locale del video appena generato (cloud): usato per estrarre il
+   * frame-0 senza ri-scaricare l'intero file da R2. Omesso → materialize. */
+  localVideoPath?: string
+): Promise<VideoPosterResult> {
   const content = await getContent(contentId);
   if (!content) throw new Error(`Contenuto non trovato (${contentId}).`);
 
@@ -1269,7 +1281,7 @@ export async function ensureVideoPoster(contentId: string): Promise<VideoPosterR
   // risalire fino a far sembrare fallita una generazione riuscita. Si logga e
   // si dichiara, il chiamante decide.
   try {
-    return await ensureVideoPosterInner(content);
+    return await ensureVideoPosterInner(content, localVideoPath);
   } catch (e) {
     logAIError("video.poster", { contentId }, e);
     return {
@@ -1280,7 +1292,8 @@ export async function ensureVideoPoster(contentId: string): Promise<VideoPosterR
 }
 
 async function ensureVideoPosterInner(
-  content: NonNullable<Awaited<ReturnType<typeof getContent>>>
+  content: NonNullable<Awaited<ReturnType<typeof getContent>>>,
+  localVideoPath?: string
 ): Promise<VideoPosterResult> {
   const usedUrls = new Set(content.assets.map((a) => a.url));
   const candidates: { url: string; filename: string; origin: string; id?: string }[] = [];
@@ -1321,7 +1334,13 @@ async function ensureVideoPosterInner(
     const videoAsset = content.assets.find((a) => a.kind === "VIDEO");
     if (videoAsset) {
       try {
-        const localVideo = await materialize(videoAsset.url);
+        // In cloud il file video è già a terra dopo la generazione
+        // (`publishOutput` con keepLocal): lo si riusa per il frame-0 invece
+        // di ri-scaricarlo interamente da R2 (risparmia decine di secondi sul
+        // tetto dei 60s di Vercel). Fallisce in modo silenzioso: se il file
+        // non c'è più, si ricade su materialize.
+        const localVideo =
+          localVideoPath ?? (await materialize(videoAsset.url));
         const framePath = path.join(
           os.tmpdir(),
           `asm-poster-${content.id}-${Date.now()}.jpg`
