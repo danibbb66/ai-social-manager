@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Save, UploadCloud } from "lucide-react";
 import { Button, Input, Textarea, Field } from "@/components/ui";
 import { saveBrandAction } from "@/lib/actions/brand";
+import { uploadFiles } from "@/lib/upload-client";
 
 type Brand = {
   name: string;
@@ -98,16 +99,12 @@ export function BrandForm({ brand }: { brand: Brand | null }) {
     setSaveError(null);
     setUploadingLogo(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) {
-        setSaveError(body?.message ?? "Upload del logo non riuscito.");
+      const [outcome] = await uploadFiles([file]);
+      if (!outcome.ok) {
+        setSaveError(outcome.message ?? "Upload del logo non riuscito.");
         return;
       }
-      const url = body?.assets?.[0]?.url as string | undefined;
-      if (url) setForm((f) => ({ ...f, logoUrl: url }));
+      if (outcome.url) setForm((f) => ({ ...f, logoUrl: outcome.url! }));
       else setSaveError("Upload riuscito ma senza percorso: riprova.");
     } catch {
       setSaveError("Upload del logo non riuscito. Riprova.");

@@ -6,6 +6,7 @@ import {
   HeadObjectCommand,
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
@@ -114,6 +115,83 @@ export async function writeFile(
   await fs.mkdir(path.dirname(abs), { recursive: true });
   await fs.writeFile(abs, body);
   return `/${k}`;
+}
+
+/**
+ * URL pre-firmato per caricare un file DIRETTAMENTE dal browser su R2.
+ *
+ * Serve a superare il limite di 4,5 MB del body delle funzioni Vercel: il
+ * file non passa dall'app, va dal PC dell'utente dritto nel bucket. Solo
+ * modalità cloud: in locale restituisce null e il chiamante usa il flusso
+ * classico via server. L'URL scade dopo `expiresInSec` (default 10 minuti).
+ */
+export async function createDirectUploadUrl(
+  key: string,
+  contentType: string,
+  expiresInSec = 600
+): Promise<{ uploadUrl: string; publicUrl: string } | null> {
+  if (!isCloudStorage()) return null;
+  const k = toKey(key);
+  const uploadUrl = await getSignedUrl(
+    s3(),
+    new PutObjectCommand({ Bucket: r2Bucket!, Key: k, ContentType: contentType }),
+    { expiresIn: expiresInSec }
+  );
+  return { uploadUrl, publicUrl: `${r2PublicUrl}/${k}` };
+}
+
+/** Metadati di un file (dimensione e MIME), null se assente. */
+export async function statFile(
+  ref: string
+): Promise<{ size: number; contentType?: string } | null> {
+  const k = toKey(ref);
+  if (isCloudStorage()) {
+    try {
+      const res = await s3().send(
+        new HeadObjectCommand({ Bucket: r2Bucket!, Key: k })
+      );
+      return { size: Number(res.ContentLength ?? 0), contentType: res.ContentType };
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const st = await fs.stat(localPathForKey(k));
+    return { size: st.size };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Legge solo i primi `maxBytes` di un file: per annusare i magic bytes di un
+ * upload diretto senza scaricare tutto l'oggetto (può essere un video da
+ * decine di MB).
+ */
+export async function readFileHead(ref: string, maxBytes: number): Promise<Buffer | null> {
+  const k = toKey(ref);
+  try {
+    if (isCloudStorage()) {
+      const res = await s3().send(
+        new GetObjectCommand({
+          Bucket: r2Bucket!,
+          Key: k,
+          Range: `bytes=0-${Math.max(0, maxBytes - 1)}`,
+        })
+      );
+      return streamToBuffer(res.Body as Readable);
+    }
+    const handle = await fs.open(localPathForKey(k), "r");
+    try {
+      const buf = Buffer.alloc(maxBytes);
+      const { bytesRead } = await handle.read(buf, 0, maxBytes, 0);
+      return buf.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return null;
+  }
 }
 
 /** Legge il contenuto di un file (da R2 o dal disco locale). */

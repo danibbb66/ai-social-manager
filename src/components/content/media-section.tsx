@@ -28,6 +28,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { unlinkAssetAction } from "@/lib/actions/media";
+import { uploadFiles, uploadErrorSummary } from "@/lib/upload-client";
 import { cn } from "@/lib/utils";
 import {
   Button,
@@ -127,22 +128,14 @@ export function ContentMediaSection({
 
   const upload = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const form = new FormData();
-    form.append("contentId", contentId);
-    Array.from(files).forEach((f) => form.append("file", f));
     setUploading(true);
     setError(null);
     startWork(async () => {
       try {
-        const res = await fetch("/api/upload", { method: "POST", body: form });
-        if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          setError(body?.message ?? "Upload fallito");
-          return;
-        }
+        const outcomes = await uploadFiles(Array.from(files), contentId);
+        const summary = uploadErrorSummary(outcomes);
+        if (summary) setError(summary);
         router.refresh();
-      } catch {
-        setError("Errore durante l'upload.");
       } finally {
         setUploading(false);
       }

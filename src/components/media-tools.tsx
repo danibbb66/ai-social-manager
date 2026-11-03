@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Link2, Link2Off, Trash2, UploadCloud } from "lucide-react";
 import { linkAssetAction, unlinkAssetAction } from "@/lib/actions/media";
+import { uploadFiles, uploadErrorSummary } from "@/lib/upload-client";
 import { cn } from "@/lib/utils";
 import {
   Button,
@@ -369,19 +370,13 @@ export function UploadButton() {
 
   const doUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const form = new FormData();
-    Array.from(files).forEach((f) => form.append("file", f));
     setUploading(true);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        alert(body?.message ?? "Upload fallito");
-        return;
-      }
+      const outcomes = await uploadFiles(Array.from(files));
+      const error = uploadErrorSummary(outcomes);
+      // Un messaggio per file: niente più fallimenti silenziosi.
+      if (error) alert(error);
       router.refresh();
-    } catch {
-      alert("Errore durante l'upload.");
     } finally {
       setUploading(false);
     }
