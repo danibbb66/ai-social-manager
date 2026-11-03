@@ -28,8 +28,8 @@ function isAuthorized(req: NextRequest): boolean {
 /**
  * Dispatcher della coda editoriale: GET e POST eseguono la stessa operazione.
  *
- * GET è il metodo che Vercel Cron invoca (14:00 UTC ≈ 15:00 Italia d'inverno).
- * POST resta disponibile per il trigger manuale con `x-api-key`.
+ * GET è il metodo che Vercel Cron invoca (14:00 UTC ≈ 15:00 Italia d'inverno,
+ * solo lunedì/mercoledì/venerdì). POST resta per il trigger manuale con `x-api-key`.
  *
  * Un solo contenuto del giorno viene pubblicato. I programmati dei giorni
  * precedenti tornano in bozza, non escono in automatico.
