@@ -13,7 +13,7 @@ import { listCuratedVideos, usedCuratedVideoKeys } from "@/lib/curated/media";
 import { getStockProvider } from "@/lib/images/factory";
 import { downloadRemoteImage } from "@/lib/images/remote";
 import { deleteUploadedFile, saveUploadedFile, uploadedFileExists } from "@/lib/uploads";
-import { materialize, publicUrlFor, isCloudStorage } from "@/lib/storage";
+import { materialize, publicUrlFor, isCloudStorage, listKeys } from "@/lib/storage";
 import { logAIError } from "@/lib/logger";
 import { config } from "@/lib/env";
 import { createAsset, linkAsset } from "@/lib/services/media";
@@ -932,21 +932,20 @@ async function resolveBackgroundMusic(): Promise<{ path: string | null; volume: 
   }
 
   // Colonne sonore multiple (priorità): si scelgono a CASO tra TUTTI i file
-  // audio in public/audio/ (.mp3/.m4a/.wav/.aac/.ogg). Basta aggiungere file a
-  // quella cartella per avere melodie sempre diverse, senza toccare il codice.
-  // Viene PRIMA degli asset AUDIO in Media Library, così la cartella delle
-  // colonne sonore è la fonte di verità e ogni video ha una traccia diversa.
+  // audio sotto la chiave `audio/` (.mp3/.m4a/.wav/.aac/.ogg). In locale è
+  // `public/audio/`, in cloud la stessa chiave nel bucket R2: l'utente carica
+  // le canzoni lì e ogni video usa una traccia diversa, senza toccare codice.
+  // Viene PRIMA degli asset AUDIO in Media Library (fallback finale).
   try {
-    const dir = path.join(process.cwd(), "public", "audio");
-    const tracks = (await fs.readdir(dir))
-      .filter((f) => /\.(m4a|mp3|wav|aac|ogg)$/i.test(f))
-      .map((f) => path.join(dir, f));
-    if (tracks.length > 0) {
-      const picked = tracks[Math.floor(Math.random() * tracks.length)];
-      return { path: picked, volume };
+    const keys = (await listKeys("audio")).filter((k) =>
+      /\.(m4a|mp3|wav|aac|ogg)$/i.test(k)
+    );
+    if (keys.length > 0) {
+      const picked = keys[Math.floor(Math.random() * keys.length)];
+      return { path: await materialize(picked), volume };
     }
   } catch {
-    // cartella assente: si prosegue con il fallback qui sotto
+    // nessuna traccia: si prosegue con il fallback qui sotto
   }
 
   try {
