@@ -456,3 +456,11 @@ model EditorialRun {
 
   @@unique([date, kind])
 }
+
+/// Impostazioni chiave-valore gestite a runtime (es. token Instagram rinnovato
+/// automaticamente dal cron, che altrimenti scadrebbe dopo 60 giorni).
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

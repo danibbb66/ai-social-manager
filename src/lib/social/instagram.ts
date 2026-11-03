@@ -3,6 +3,7 @@ import { config, hasInstagram, publicBaseUrl } from "@/lib/env";
 import { redactSecrets } from "@/lib/security";
 import { PublishPayload, PublishResult, SocialProvider } from "@/lib/social/provider";
 import { formatGraphError } from "@/lib/social/graph-error";
+import { getInstagramAccessToken } from "@/lib/social/instagram-token";
 
 /**
  * Host dell'Instagram API with Instagram Login.
@@ -218,7 +219,8 @@ export class InstagramProvider implements SocialProvider {
       };
     }
     const accountId = config.instagram.accountId!;
-    const token = config.instagram.token!;
+    // Token dal DB (rinnovato automaticamente dal cron) con fallback all'env.
+    const token = (await getInstagramAccessToken())!;
     const caption = [payload.caption, payload.hashtags].filter(Boolean).join(" ");
 
     try {

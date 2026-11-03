@@ -2,6 +2,7 @@
 
 import { config, hasFacebook, hasInstagram } from "@/lib/env";
 import { redactSecrets } from "@/lib/security";
+import { getInstagramAccessToken } from "@/lib/social/instagram-token";
 
 export interface ConnectionCheck {
   ok: boolean;
@@ -18,9 +19,10 @@ async function checkInstagram(): Promise<ConnectionCheck> {
     return { ok: false, message: "Credenziali Instagram mancanti in .env." };
   }
   try {
+    const token = await getInstagramAccessToken();
     const url =
       `https://graph.instagram.com/v23.0/me?fields=id,username` +
-      `&access_token=${encodeURIComponent(config.instagram.token!)}`;
+      `&access_token=${encodeURIComponent(token!)}`;
     const res = await fetch(url);
     const json = (await res.json()) as {
       username?: string;

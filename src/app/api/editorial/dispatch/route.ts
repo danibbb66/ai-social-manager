@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { dispatchDueContents } from "@/lib/services/dispatch";
+import { refreshInstagramAccessToken } from "@/lib/social/instagram-token";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +39,13 @@ async function handle(req: NextRequest) {
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
+  // Rinnovo quotidiano del token Instagram (scade dopo 60 giorni: un rinnovo
+  // al giorno tiene la catena viva per sempre). Un fallimento non blocca il
+  // dispatch: il token attuale resta valido fino alla sua scadenza naturale.
+  const igToken = await refreshInstagramAccessToken();
+
   const outcome = await dispatchDueContents(new Date());
-  return Response.json({ ok: true, ...outcome });
+  return Response.json({ ok: true, igTokenRefresh: igToken, ...outcome });
 }
 
 export async function GET(req: NextRequest) {
