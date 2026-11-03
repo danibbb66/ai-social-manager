@@ -931,6 +931,24 @@ async function resolveBackgroundMusic(): Promise<{ path: string | null; volume: 
     }
   }
 
+  // Colonne sonore multiple (priorità): si scelgono a CASO tra TUTTI i file
+  // audio in public/audio/ (.mp3/.m4a/.wav/.aac/.ogg). Basta aggiungere file a
+  // quella cartella per avere melodie sempre diverse, senza toccare il codice.
+  // Viene PRIMA degli asset AUDIO in Media Library, così la cartella delle
+  // colonne sonore è la fonte di verità e ogni video ha una traccia diversa.
+  try {
+    const dir = path.join(process.cwd(), "public", "audio");
+    const tracks = (await fs.readdir(dir))
+      .filter((f) => /\.(m4a|mp3|wav|aac|ogg)$/i.test(f))
+      .map((f) => path.join(dir, f));
+    if (tracks.length > 0) {
+      const picked = tracks[Math.floor(Math.random() * tracks.length)];
+      return { path: picked, volume };
+    }
+  } catch {
+    // cartella assente: si prosegue con il fallback qui sotto
+  }
+
   try {
     const audios = await prisma.contentAsset.findMany({
       where: { kind: "AUDIO" },
@@ -943,23 +961,6 @@ async function resolveBackgroundMusic(): Promise<{ path: string | null; volume: 
     }
   } catch (e) {
     logAIError("video.audio.resolve", {}, e);
-  }
-
-  // Colonne sonore multiple: si usano TUTTI i file audio presenti in
-  // public/audio/. Oggi c'è una sola traccia, ma basta aggiungere file
-  // .mp3/.m4a/.wav a quella cartella per avere più melodie, scelte a caso a
-  // ogni video, senza toccare il codice.
-  try {
-    const dir = path.join(process.cwd(), "public", "audio");
-    const tracks = (await fs.readdir(dir))
-      .filter((f) => /\.(m4a|mp3|wav|aac|ogg)$/i.test(f))
-      .map((f) => path.join(dir, f));
-    if (tracks.length > 0) {
-      const picked = tracks[Math.floor(Math.random() * tracks.length)];
-      return { path: picked, volume };
-    }
-  } catch {
-    // cartella assente: si prosegue senza audio
   }
 
   return { path: null, volume };

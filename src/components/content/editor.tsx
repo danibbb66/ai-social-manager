@@ -13,12 +13,14 @@ import {
   X,
   Image as ImageIcon,
   RotateCcw,
+  Rocket,
 } from "lucide-react";
 import {
   updateContentAction,
   deleteContentAction,
   duplicateContentAction,
   setStatusAction,
+  publishAction,
 } from "@/lib/actions/content";
 import { PLATFORM_LABELS, TYPE_OPTIONS } from "@/lib/status";
 import {
@@ -112,6 +114,9 @@ export function ContentEditor({
   const canApprove = content.status === "DRAFT";
   const canReject = content.status === "DRAFT";
   const canRestoreDraft = ["REJECTED", "FAILED"].includes(content.status);
+  // "Pubblica ora": solo un contenuto già approvato (o programmato) può uscire
+  // subito, senza aspettare il cron. La pubblicazione richiede anche caption.
+  const canPublishNow = ["APPROVED", "SCHEDULED"].includes(content.status);
 
   /**
    * Instagram richiede obbligatoriamente un media. Se il contenuto è destinato
@@ -251,6 +256,28 @@ export function ContentEditor({
         return;
       }
       router.push("/planning");
+    });
+
+  /**
+   * Pubblica subito, senza aspettare il cron delle 15:00. Salva prima il
+   * form (così caption e piattaforme appena modificate sono aggiornate) e
+   * chiede conferma: l'azione è pubblica e immediata.
+   */
+  const doPublishNow = () =>
+    startTransition(async () => {
+      const names = [...platforms]
+        .map((p) => PLATFORM_LABELS[p as keyof typeof PLATFORM_LABELS] ?? p)
+        .join(" e ");
+      if (
+        !window.confirm(
+          `Pubblicare ORA questo contenuto su ${names || "le piattaforme selezionate"}?\n\nL'azione è immediata e pubblica sui social.`
+        )
+      )
+        return;
+      const saved = await persistForm();
+      if (!saved) return;
+      const ok = await runAction(() => publishAction(content.id));
+      if (ok) setActionMessage("Pubblicazione inviata alle piattaforme. Vedi lo stato qui sopra.");
     });
 
   const previewBody = (hashtags ? `${caption}\n\n${hashtags}` : caption).trim();
@@ -490,6 +517,18 @@ export function ContentEditor({
                 >
                   <RotateCcw className="h-4 w-4" />
                   Ripristina bozza
+                </Button>
+              ) : null}
+
+              {canPublishNow ? (
+                <Button
+                  className="w-full"
+                  variant="primary"
+                  onClick={doPublishNow}
+                  disabled={pending || !hasCaption}
+                >
+                  <Rocket className="h-4 w-4" />
+                  Pubblica ora
                 </Button>
               ) : null}
 
