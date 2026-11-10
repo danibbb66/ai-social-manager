@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { dispatchDueContents } from "@/lib/services/dispatch";
+import { cleanupPublishedMedia } from "@/lib/services/cleanup";
 import { refreshInstagramAccessToken } from "@/lib/social/instagram-token";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,17 @@ async function handle(req: NextRequest) {
   const igToken = await refreshInstagramAccessToken();
 
   const outcome = await dispatchDueContents(new Date());
-  return Response.json({ ok: true, igTokenRefresh: igToken, ...outcome });
+
+  // Pulizia dei reel generati, una settimana dopo la pubblicazione: liberano
+  // spazio su R2 senza toccare contenuti, media curati o file caricati a mano.
+  const cleanup = await cleanupPublishedMedia().catch((e) => ({
+    contents: 0,
+    deletedAssets: 0,
+    failed: -1,
+    error: e instanceof Error ? e.message : String(e),
+  }));
+
+  return Response.json({ ok: true, igTokenRefresh: igToken, cleanup, ...outcome });
 }
 
 export async function GET(req: NextRequest) {
