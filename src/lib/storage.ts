@@ -37,14 +37,18 @@ const r2Secret = process.env.R2_SECRET_ACCESS_KEY?.trim();
 const r2Bucket = process.env.R2_BUCKET_NAME?.trim();
 const r2PublicUrl = (process.env.R2_PUBLIC_URL?.trim() ?? "").replace(/\/+$/, "");
 
-const useCloud = process.env.USE_CLOUD_STORAGE === "true";
-
 /** La radice locale di `public/` (usata solo in modalità locale). */
 const PUBLIC_DIR = path.join(process.cwd(), "public");
 
+/**
+ * Modalità cloud attiva? Il flag è letto a runtime (non congelato all'import):
+ * i test forzano la modalità locale via `process.env` senza toccare il codice
+ * di produzione, che lo imposta solo nel `.env`. Tutte le credenziali R2
+ * devono essere presenti perché la modalità sia valida.
+ */
 export function isCloudStorage(): boolean {
   return (
-    useCloud &&
+    process.env.USE_CLOUD_STORAGE === "true" &&
     Boolean(r2AccountId && r2AccessKey && r2Secret && r2Bucket && r2PublicUrl)
   );
 }

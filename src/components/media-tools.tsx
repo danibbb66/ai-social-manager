@@ -372,10 +372,21 @@ export function UploadButton() {
     if (files.length === 0) return;
     setUploading(true);
     try {
-      const outcomes = await uploadFiles(files);
+      // createContent: ogni file caricato da qui diventa anche una bozza in
+      // Pianificazione con il media già collegato (niente associazione a mano).
+      const outcomes = await uploadFiles(files, null, true);
       const error = uploadErrorSummary(outcomes);
       // Un messaggio per file: niente più fallimenti silenziosi.
-      if (error) alert(error);
+      if (error) {
+        alert(error);
+      } else {
+        const n = outcomes.filter((o) => o.ok).length;
+        alert(
+          n === 1
+            ? "File caricato! Ho creato la bozza in Pianificazione: aprila, scrivi la caption e programmala."
+            : `${n} file caricati! Trovi le bozze in Pianificazione, pronte da programmare.`
+        );
+      }
       router.refresh();
     } finally {
       setUploading(false);

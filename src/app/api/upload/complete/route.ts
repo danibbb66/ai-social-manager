@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { statFile, readFileHead } from "@/lib/storage";
 import { detectUploadKind, UnsupportedMediaTypeError } from "@/lib/uploads";
 import { deleteUploadedFile } from "@/lib/uploads";
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest) {
     type?: unknown;
     size?: unknown;
     contentId?: unknown;
+    createContent?: unknown;
   };
   try {
     body = await req.json();
@@ -45,6 +47,10 @@ export async function POST(req: NextRequest) {
     typeof body.contentId === "string" && body.contentId.trim()
       ? body.contentId.trim()
       : null;
+  // Quando l'upload parte dalla pagina Media (non da un contenuto): per ogni
+  // file nasce anche una BOZZA in Pianificazione con il media già collegato,
+  // così l'utente non deve mai fare l'associazione a mano.
+  const createContent = body.createContent === true;
 
   // La chiave deve stare sotto uploads/ ed essere stata emessa da /sign:
   // senza questo vincolo si potrebbero registrare oggetti arbitrari del bucket.
@@ -84,6 +90,37 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: false, message }, { status: 415 });
   }
 
+  // Bozza automatica per i file caricati dalla Media Library: tipo VIDEO
+  // per i video, POST per le immagini, destinata a Instagram + Facebook.
+  let linkedContentId = contentId;
+  let createdContentId: string | null = null;
+  if (createContent && !contentId) {
+    try {
+      const content = await prisma.content.create({
+        data: {
+          type: detected.kind === "VIDEO" ? "VIDEO" : "POST",
+          title: name.replace(/\.[^.]+$/, ""),
+          platforms: {
+            create: [
+              { platform: "INSTAGRAM", accountId: null },
+              { platform: "FACEBOOK", accountId: null },
+            ],
+          },
+        },
+        select: { id: true },
+      });
+      linkedContentId = content.id;
+      createdContentId = content.id;
+    } catch (e) {
+      await deleteUploadedFile(key).catch(() => {});
+      console.error("Upload/complete: creazione bozza fallita", name, e);
+      return Response.json(
+        { ok: false, message: "Errore nella creazione della bozza. Riprova." },
+        { status: 500 }
+      );
+    }
+  }
+
   try {
     const asset = await createAsset({
       url: publicUrl,
@@ -91,11 +128,14 @@ export async function POST(req: NextRequest) {
       mimeType: detected.mimeType,
       size: stat.size,
       kind: detected.kind,
-      contentId,
+      contentId: linkedContentId,
     });
-    return Response.json({ ok: true, assets: [asset] });
+    return Response.json({ ok: true, assets: [asset], contentId: createdContentId });
   } catch (e) {
     await deleteUploadedFile(key).catch(() => {});
+    if (createdContentId) {
+      await prisma.content.delete({ where: { id: createdContentId } }).catch(() => {});
+    }
     console.error("Upload/complete: registrazione asset fallita", name, e);
     return Response.json(
       { ok: false, message: "Errore nel salvare i metadati del file. Riprova." },

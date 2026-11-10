@@ -46,6 +46,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Come /api/upload/complete: dalla pagina Media ogni file diventa anche
+  // una bozza in Pianificazione con il media già collegato.
+  const createContentFlag = form.get("createContent") === "1";
+
   const fileEntries = Array.from(form.entries()).filter(
     ([key, value]) => key.startsWith("file") && value instanceof File
   );
@@ -126,6 +130,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Bozza automatica per gli upload dalla Media Library (vedi complete).
+    let linkedContentId = contentId;
+    if (createContentFlag && !contentId) {
+      try {
+        const content = await prisma.content.create({
+          data: {
+            type: detected.kind === "VIDEO" ? "VIDEO" : "POST",
+            title: file.name.replace(/\.[^.]+$/, ""),
+            platforms: {
+              create: [
+                { platform: "INSTAGRAM", accountId: null },
+                { platform: "FACEBOOK", accountId: null },
+              ],
+            },
+          },
+          select: { id: true },
+        });
+        linkedContentId = content.id;
+      } catch (e) {
+        await deleteUploadedFile(saved.url).catch(() => {});
+        console.error("Upload: creazione bozza fallita", file.name, e);
+        return Response.json(
+          { ok: false, message: "Errore nella creazione della bozza. Riprova." },
+          { status: 500 }
+        );
+      }
+    }
+
     try {
       const asset = await createAsset({
         url: saved.url,
@@ -133,12 +165,15 @@ export async function POST(req: NextRequest) {
         mimeType: saved.mimeType,
         size: saved.size,
         kind: detected.kind,
-        contentId,
+        contentId: linkedContentId,
       });
       assets.push(asset);
     } catch (e) {
       // Pulizia del file appena scritto per evitare file orfani.
       await deleteUploadedFile(saved.url).catch(() => {});
+      if (linkedContentId && linkedContentId !== contentId) {
+        await prisma.content.delete({ where: { id: linkedContentId } }).catch(() => {});
+      }
       console.error("Upload: registrazione asset fallita", file.name, e);
       return Response.json(
         {

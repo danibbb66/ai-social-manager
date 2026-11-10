@@ -17,9 +17,15 @@ export interface UploadOutcome {
   message?: string;
   /** URL pubblico del file caricato (presente solo se ok). */
   url?: string;
+  /** Bozza creata automaticamente (upload dalla pagina Media). */
+  contentId?: string | null;
 }
 
-async function uploadOne(file: File, contentId?: string | null): Promise<UploadOutcome> {
+async function uploadOne(
+  file: File,
+  contentId?: string | null,
+  createContent = false
+): Promise<UploadOutcome> {
   // 1) Preparazione: il server decide il percorso (direct R2 / proxy locale).
   let sign: {
     ok?: boolean;
@@ -38,6 +44,7 @@ async function uploadOne(file: File, contentId?: string | null): Promise<UploadO
         type: file.type,
         size: file.size,
         contentId: contentId ?? undefined,
+        createContent,
       }),
     });
     sign = await res.json();
@@ -53,13 +60,14 @@ async function uploadOne(file: File, contentId?: string | null): Promise<UploadO
     const form = new FormData();
     form.append("file", file);
     if (contentId) form.append("contentId", contentId);
+    if (createContent) form.append("createContent", "1");
     try {
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const body = await res.json().catch(() => null);
       if (!res.ok || !body?.ok) {
         return { fileName: file.name, ok: false, message: body?.message ?? "Upload fallito." };
       }
-      return { fileName: file.name, ok: true, url: body.assets?.[0]?.url };
+      return { fileName: file.name, ok: true, url: body.assets?.[0]?.url, contentId: body.contentId ?? null };
     } catch {
       return { fileName: file.name, ok: false, message: "Errore di rete durante l'upload." };
     }
@@ -91,26 +99,32 @@ async function uploadOne(file: File, contentId?: string | null): Promise<UploadO
         type: file.type,
         size: file.size,
         contentId: contentId ?? undefined,
+        createContent,
       }),
     });
     const body = await res.json().catch(() => null);
     if (!res.ok || !body?.ok) {
       return { fileName: file.name, ok: false, message: body?.message ?? "Registrazione del file fallita." };
     }
-    return { fileName: file.name, ok: true, url: body.assets?.[0]?.url };
+    return { fileName: file.name, ok: true, url: body.assets?.[0]?.url, contentId: body.contentId ?? null };
   } catch {
     return { fileName: file.name, ok: false, message: "Errore di rete durante la registrazione." };
   }
 }
 
-/** Carica più file in sequenza e restituisce l'esito di ciascuno. */
+/**
+ * Carica più file in sequenza e restituisce l'esito di ciascuno.
+ * `createContent` (pagina Media): ogni file diventa anche una bozza in
+ * Pianificazione con il media già collegato.
+ */
 export async function uploadFiles(
   files: File[],
-  contentId?: string | null
+  contentId?: string | null,
+  createContent = false
 ): Promise<UploadOutcome[]> {
   const outcomes: UploadOutcome[] = [];
   for (const file of files) {
-    outcomes.push(await uploadOne(file, contentId));
+    outcomes.push(await uploadOne(file, contentId, createContent));
   }
   return outcomes;
 }

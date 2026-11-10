@@ -238,8 +238,21 @@ async function cleanup() {
   }
 }
 
-before(cleanup);
-after(cleanup);
+// Integrazione sullo storage LOCALE: i test verificano i percorsi /uploads/…
+// e non devono toccare il bucket R2 (in produzione `USE_CLOUD_STORAGE=true`
+// arriva invece dal .env).
+const previousCloudFlag = process.env.USE_CLOUD_STORAGE;
+
+before(async () => {
+  process.env.USE_CLOUD_STORAGE = "false";
+  await cleanup();
+});
+
+after(async () => {
+  if (previousCloudFlag === undefined) delete process.env.USE_CLOUD_STORAGE;
+  else process.env.USE_CLOUD_STORAGE = previousCloudFlag;
+  await cleanup();
+});
 
 describe("POST /api/upload registra il kind corretto", () => {
   test("un JPEG viene salvato come IMAGE in /uploads/images", async () => {
