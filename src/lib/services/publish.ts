@@ -93,6 +93,16 @@ export async function publishContent(
   };
 
   for (const target of targets) {
+    // Una piattaforma già pubblicata non si ripubblica: un retry (es. Instagram
+    // fallito dopo che Facebook è già uscito) non deve creare doppioni.
+    if (target.publishedAt) {
+      results.push({
+        platform: target.platform,
+        ok: true,
+        message: `Già pubblicato il ${target.publishedAt.toISOString()} — nessuna nuova pubblicazione.`,
+      });
+      continue;
+    }
     try {
       const provider = getSocialProvider(target.platform);
       const res = await provider.publish(payloadInput, content);

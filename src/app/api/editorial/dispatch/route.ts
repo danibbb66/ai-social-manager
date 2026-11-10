@@ -3,6 +3,8 @@ import { dispatchDueContents } from "@/lib/services/dispatch";
 import { refreshInstagramAccessToken } from "@/lib/social/instagram-token";
 
 export const dynamic = "force-dynamic";
+/** Attesa del container Instagram (fino a 150s) + pubblicazione: serve margine. */
+export const maxDuration = 300;
 
 /**
  * Stessa auth duale di `/api/editorial/run` e `/api/editorial/status`:

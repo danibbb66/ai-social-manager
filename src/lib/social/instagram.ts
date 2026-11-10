@@ -38,10 +38,12 @@ const NO_PUBLIC_URL =
  * /media_publish in quel momento fa fallire con
  * "Media ID is not available", quindi bisogna attendere FINISHED.
  *
- * Limite di 60s: nel caso reale il container è pronto in ~15s, il margine
- * copre rete lenta e video senza rendere la UI bloccata troppo a lungo.
+ * Limite di 150s: nel caso reale il container è pronto in ~15-30s, ma Meta
+ * può impiegare oltre un minuto sui video (4/11/2026: timeout a 60s e post
+ * perso su Instagram). La route di dispatch dichiara maxDuration=300 per
+ * coprire attesa + pubblicazione.
  */
-const CONTAINER_TIMEOUT_MS = 60_000;
+const CONTAINER_TIMEOUT_MS = 150_000;
 
 /**
  * Intervalli crescenti fra un poll e il successivo: subito, poi 1s, 2s, 4s, 8s.
