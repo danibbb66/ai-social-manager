@@ -168,6 +168,32 @@ export async function statFile(
 }
 
 /**
+ * Spazio occupato nel bucket: numero di file e byte totali.
+ * In locale (o senza credenziali) restituisce `null`.
+ */
+export async function bucketUsage(): Promise<{ files: number; bytes: number } | null> {
+  if (!isCloudStorage()) return null;
+  let files = 0;
+  let bytes = 0;
+  let token: string | undefined;
+  do {
+    const page = await s3().send(
+      new ListObjectsV2Command({
+        Bucket: r2Bucket!,
+        ContinuationToken: token,
+        MaxKeys: 1000,
+      })
+    );
+    for (const obj of page.Contents ?? []) {
+      files += 1;
+      bytes += obj.Size ?? 0;
+    }
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
+  return { files, bytes };
+}
+
+/**
  * Legge solo i primi `maxBytes` di un file: per annusare i magic bytes di un
  * upload diretto senza scaricare tutto l'oggetto (può essere un video da
  * decine di MB).

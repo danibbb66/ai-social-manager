@@ -4,10 +4,12 @@ import {
   CalendarClock,
   CheckCircle2,
   FileText,
+  HardDrive,
   Image as ImageIcon,
   Rocket,
 } from "lucide-react";
 import { getDashboardStats } from "@/lib/services/stats";
+import { getStorageUsage } from "@/lib/services/storage-usage";
 import { Card, EmptyState, LinkButton } from "@/components/ui";
 import { NewContentButton } from "@/components/new-content-button";
 
@@ -22,10 +24,16 @@ export const dynamic = "force-dynamic";
  */
 export default async function DashboardPage() {
   let stats: Awaited<ReturnType<typeof getDashboardStats>> | null = null;
+  let storage: Awaited<ReturnType<typeof getStorageUsage>> = null;
   try {
     stats = await getDashboardStats();
   } catch (e) {
     console.error("[page:dashboard] caricamento statistiche fallito", e);
+  }
+  try {
+    storage = await getStorageUsage();
+  } catch (e) {
+    console.error("[page:dashboard] lettura spazio cloud fallita", e);
   }
 
   if (!stats) {
@@ -162,6 +170,47 @@ export default async function DashboardPage() {
           );
         })}
       </div>
+
+      {storage ? (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <HardDrive className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  Spazio cloud
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  {storage.files} file · i reel generati si eliminano da soli 7 giorni dopo la pubblicazione
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                {(storage.usedBytes / 1024 / 1024 / 1024).toFixed(2)} GB
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                su {(storage.limitBytes / 1024 / 1024 / 1024).toFixed(0)} GB gratuiti
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+            <div
+              className={
+                storage.percent >= 90
+                  ? "h-full rounded-full bg-red-500"
+                  : storage.percent >= 70
+                    ? "h-full rounded-full bg-amber-500"
+                    : "h-full rounded-full bg-emerald-500"
+              }
+              style={{ width: `${Math.max(1, storage.percent)}%` }}
+            />
+          </div>
+          <div className="mt-1 text-right text-[11px] text-slate-400">{storage.percent}% usato</div>
+        </div>
+      ) : null}
 
       {stats.pendingApproval === 0 && (stats.counts.SCHEDULED ?? 0) === 0 ? (
         <div className="mt-6">
