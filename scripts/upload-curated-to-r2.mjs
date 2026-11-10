@@ -1,10 +1,14 @@
 // Carica public/curated/** su Cloudflare R2 con le stesse chiavi relative a
 // public/ (es. "curated/photos/bali/x.jpg"). Idempotente: salta i file già
 // presenti nel bucket (stessa chiave), così può essere rilanciato in sicurezza.
+// Con --sync elimina dal bucket i file `curated/**` che non sono più presenti
+// nella cartella locale (cartelle di destinazioni rimosse, clip sostituite...):
+// il conteggio dell'app torna a rispecchiare esattamente cosa hai in locale.
 //
 // Uso:
-//   node scripts/upload-curated-to-r2.mjs
-//   node scripts/upload-curated-to-r2.mjs --dry-run
+//   node scripts/upload-curated-to-r2.mjs           (carica solo i nuovi)
+//   node scripts/upload-curated-to-r2.mjs --sync    (carica + elimina i rimossi)
+//   node scripts/upload-curated-to-r2.mjs --dry-run [--sync]
 //
 // Legge i parametri R2 da .env (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID,
 // R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME). Non usa USE_CLOUD_STORAGE: questo
@@ -13,11 +17,18 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
 
 const ROOT = process.cwd();
 const CURATED_DIR = path.join(ROOT, "public", "curated");
 const DRY_RUN = process.argv.includes("--dry-run");
+const SYNC = process.argv.includes("--sync");
 
 const CONTENT_TYPES = {
   ".jpg": "image/jpeg",
@@ -129,9 +140,46 @@ async function main() {
     console.log(`[ok] ${key}`);
   }
 
+  // --sync: allinea il bucket alla cartella locale. SOLO il prefisso curated/:
+  // upload dei reel e audio non vengono mai toccati da qui.
+  let removed = 0;
+  if (SYNC) {
+    const localKeys = new Set(
+      files.map((full) => path.relative(ROOT, full).replace(/\\/g, "/").replace(/^public\//, ""))
+    );
+    let token;
+    const remoteKeys = [];
+    do {
+      const page = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: "curated/",
+          ContinuationToken: token,
+        })
+      );
+      for (const obj of page.Contents ?? []) {
+        if (obj.Key) remoteKeys.push(obj.Key);
+      }
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+
+    for (const key of remoteKeys) {
+      if (localKeys.has(key)) continue;
+      if (DRY_RUN) {
+        console.log(`[dry-run] eliminerei: ${key}`);
+        continue;
+      }
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+      removed += 1;
+      console.log(`[eliminato] ${key}`);
+    }
+  }
+
   const mb = (bytes / (1024 * 1024)).toFixed(1);
   console.log(
-    `\nFatto. Caricati ${uploaded}, saltati (già presenti) ${skipped}, totale ${files.length} file.${
+    `\nFatto. Caricati ${uploaded}, saltati (già presenti) ${skipped}${
+      SYNC ? `, eliminati ${removed}` : ""
+    }, totale ${files.length} file.${
       DRY_RUN ? " (dry-run, nessun upload)" : ` Dimensione caricata ~${mb} MB.`
     }`
   );
