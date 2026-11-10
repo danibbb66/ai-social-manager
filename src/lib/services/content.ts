@@ -79,7 +79,21 @@ function assertContentReadyForPublishPath(content: {
   }
 }
 
-/** Valida la data di programmazione: valida e non nel passato. */
+/** Inizio del giorno corrente (mezzanotte locale). */
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Valida la data di programmazione: valida e non in un giorno passato.
+ *
+ * Si confronta il GIORNO, non l'ora: l'app salva mezzogiorno come orario
+ * interno, quindi alle 18 "oggi alle 12" sarebbe già passato. Ma programmare
+ * per OGGI deve essere possibile fino a fine giornata (il cron pubblica nel
+ * pomeriggio): il contenuto esce al giro successivo.
+ */
 function assertFutureScheduledDate(date: Date | null | undefined, forSchedule = false): Date | null {
   if (!date) {
     if (forSchedule) {
@@ -90,8 +104,8 @@ function assertFutureScheduledDate(date: Date | null | undefined, forSchedule = 
   if (Number.isNaN(date.getTime())) {
     throw new Error("Data di programmazione non valida.");
   }
-  if (date.getTime() < Date.now() - 60_000) {
-    throw new Error("La data di programmazione non può essere nel passato.");
+  if (date.getTime() < startOfToday().getTime()) {
+    throw new Error("La data di programmazione non può essere in un giorno passato.");
   }
   return date;
 }

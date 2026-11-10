@@ -38,8 +38,12 @@ export async function moveContentOnCalendar(
   const content = await prisma.content.findUnique({ where: { id } });
   if (!content) throw new Error("Contenuto non trovato.");
 
-  if (!Number.isNaN(newDate.getTime()) && newDate.getTime() < Date.now() - 60_000) {
-    throw new Error("La nuova data di programmazione non può essere nel passato.");
+  // Si confronta il GIORNO (vedi assertFutureScheduledDate): programmare per
+  // oggi deve restare possibile fino a fine giornata anche dopo mezzogiorno.
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  if (!Number.isNaN(newDate.getTime()) && newDate.getTime() < startOfToday.getTime()) {
+    throw new Error("La nuova data di programmazione non può essere in un giorno passato.");
   }
 
   if (content.status !== "APPROVED" && content.status !== "SCHEDULED") {
