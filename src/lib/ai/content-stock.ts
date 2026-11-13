@@ -310,6 +310,8 @@ async function applySocialTemplate(
     destination: string | null;
     topic: string | null;
     title: string | null;
+    /** Titolo stampato, scritto a mano dall'utente. Vuoto = nessun titolo. */
+    heading?: string | null;
     format?: string | null;
     callout?: string | null;
     titleColor?: string | null;
@@ -320,9 +322,12 @@ async function applySocialTemplate(
 ): Promise<TemplatedImage> {
   // La destinazione vera e il topic restano distinti: il topic è la richiesta
   // ("proposta Maldive"), e trattarlo come nome del luogo stamperebbe sul post
-  // la formula dell'utente invece di "Maldive".
-  const title = placeNameFrom(input.destination, input.topic, input.title);
-  if (!title || buffer.length === 0) {
+  // la formula dell'utente invece di "Maldive". Il luogo serve solo per i punti
+  // editoriali e lo slug del file; il TITOLO stampato è quello scritto a mano,
+  // che può anche essere vuoto (nessun titolo).
+  const place = placeNameFrom(input.destination, input.topic, input.title);
+  const title = (input.heading ?? "").trim();
+  if (buffer.length === 0) {
     return {
       buffer,
       mimeType: sniffMediaMime(buffer) ?? "image/jpeg",
@@ -351,8 +356,8 @@ async function applySocialTemplate(
       // un catalogo da cui prendere i dati, quindi i punti vengono dalla
       // conoscenza della destinazione: è l'unica fonte che esiste qui, ed è
       // anche l'unica che ha qualcosa da dire del posto.
-      points: editorialPoints(input.format ?? "", title),
-      extraction: neutralExtraction(input.contentId, title),
+      points: editorialPoints(input.format ?? "", place),
+      extraction: neutralExtraction(input.contentId, place),
       brandLogo: mark?.kind === "logo" ? mark : null,
       brandName: mark?.kind === "wordmark" ? mark.name : null,
     });
@@ -544,6 +549,8 @@ export async function attachStockVisual(input: {
   destination?: string | null;
   topic?: string | null;
   title?: string | null;
+  /** Titolo stampato sul post, scritto a mano. Vuoto = nessun titolo. */
+  heading?: string | null;
   format?: string | null;
   /** Testo "gancio" centrato sul post, fornito dall'utente in chat. */
   callout?: string | null;
@@ -701,6 +708,7 @@ export async function attachStockVisual(input: {
     destination: (input.destination ?? "").trim() || null,
     topic: (input.topic ?? "").trim() || null,
     title: input.title ?? null,
+    heading: input.heading ?? null,
     format: input.format,
     callout: input.callout ?? null,
     titleColor: input.titleColor ?? null,

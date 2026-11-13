@@ -67,17 +67,20 @@ export function ManualEditor({
 
   // stato VIDEO
   const [selected, setSelected] = useState<ClipSelection[]>([]);
+  const [videoTitle, setVideoTitle] = useState("");
   const [font, setFont] = useState("bold");
   const [captionColor, setCaptionColor] = useState("#ffffff");
   const [titleColor, setTitleColor] = useState("#ffffff");
-  const [useTitleColor, setUseTitleColor] = useState(false);
+  const [titleFont, setTitleFont] = useState("bold");
+  const [audioKey, setAudioKey] = useState<string>("");
+  const [audios, setAudios] = useState<MediaItem[]>([]);
   const [preview, setPreview] = useState<MediaItem | null>(null);
 
   // stato POST
   const [photoKey, setPhotoKey] = useState<string | null>(null);
+  const [postTitle, setPostTitle] = useState("");
   const [callout, setCallout] = useState("");
   const [postTitleColor, setPostTitleColor] = useState("#ffffff");
-  const [usePostTitleColor, setUsePostTitleColor] = useState(false);
   const [postTitleFont, setPostTitleFont] = useState("bold");
   const [postCalloutColor, setPostCalloutColor] = useState("#ffffff");
   const [postCalloutFont, setPostCalloutFont] = useState("bold");
@@ -89,10 +92,16 @@ export function ManualEditor({
     if (!open) return;
     setLoading(true);
     setSelected([]);
+    setVideoTitle("");
+    setTitleColor("#ffffff");
+    setTitleFont("bold");
+    setCaptionColor("#ffffff");
+    setFont("bold");
+    setAudioKey("");
     setPhotoKey(null);
+    setPostTitle("");
     setCallout("");
     setPostTitleColor("#ffffff");
-    setUsePostTitleColor(false);
     setPostTitleFont("bold");
     setPostCalloutColor("#ffffff");
     setPostCalloutFont("bold");
@@ -105,6 +114,13 @@ export function ManualEditor({
         if (cancelled) return;
         setPhotos(data.photos ?? []);
         setVideos(data.videos ?? []);
+        try {
+          const ares = await fetch("/api/audio-tracks");
+          const adata = await ares.json();
+          if (!cancelled) setAudios(adata.audios ?? []);
+        } catch {
+          if (!cancelled) setAudios([]);
+        }
       } catch {
         if (!cancelled) {
           setPhotos([]);
@@ -161,6 +177,7 @@ export function ManualEditor({
     try {
       const res = await createManualVideoAction({
         destination: name,
+        title: videoTitle.trim() || null,
         clips: selected.map((c) => ({
           key: c.key,
           startSec: c.startSec,
@@ -169,7 +186,9 @@ export function ManualEditor({
         })),
         font,
         captionColor,
-        titleColor: useTitleColor ? titleColor : null,
+        titleColor,
+        titleFont,
+        audioKey: audioKey || null,
       });
       setStatus(
         res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
@@ -202,9 +221,10 @@ export function ManualEditor({
     try {
       const res = await createManualPostAction({
         destination: name,
+        title: postTitle.trim() || null,
         photoKey,
         callout: callout.trim() || null,
-        titleColor: usePostTitleColor ? postTitleColor : null,
+        titleColor: postTitleColor,
         titleFont: postTitleFont,
         calloutColor: postCalloutColor,
         calloutFont: postCalloutFont,
@@ -289,55 +309,86 @@ export function ManualEditor({
             onPreview={(v) => setPreview(v)}
           />
           <div className="flex flex-col gap-3">
-            {mode === "video" && (
-              <>
+            {/* Sezione TITOLO */}
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Titolo
+              </p>
+              <Field label="Testo del titolo">
+                <Input
+                  value={videoTitle}
+                  onChange={(e) => setVideoTitle(e.target.value)}
+                  placeholder="Lascia vuoto per non mostrare nessun titolo"
+                />
+              </Field>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Colore titolo">
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                      <input
-                        type="checkbox"
-                        checked={useTitleColor}
-                        onChange={(e) => setUseTitleColor(e.target.checked)}
-                        className="h-4 w-4 rounded"
-                      />
-                      Personalizzato
-                    </label>
+                  <div className="flex items-center gap-2">
                     <input
                       type="color"
                       value={titleColor}
-                      disabled={!useTitleColor}
                       onChange={(e) => setTitleColor(e.target.value)}
-                      className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700"
+                      className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
                     />
-                    <span className="text-xs text-slate-500">
-                      {useTitleColor ? titleColor : "gradiente automatico"}
-                    </span>
+                    <span className="text-xs text-slate-500">{titleColor}</span>
                   </div>
                 </Field>
+                <Field label="Stile titolo">
+                  <Select value={titleFont} onChange={(e) => setTitleFont(e.target.value)}>
+                    {FONT_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Stile scritta">
-                    <Select value={font} onChange={(e) => setFont(e.target.value)}>
-                      {FONT_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label="Colore scritta">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={captionColor}
-                        onChange={(e) => setCaptionColor(e.target.value)}
-                        className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
-                      />
-                      <span className="text-xs text-slate-500">{captionColor}</span>
-                    </div>
-                  </Field>
-                </div>
-              </>
+            {/* Sezione TESTO (scritte per clip) */}
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Testo sulle clip
+              </p>
+              <p className="mb-2 text-xs text-slate-400">
+                Scrivi il testo di ogni clip nella lista qui sotto; stile e colore valgono per tutte.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Stile testo">
+                  <Select value={font} onChange={(e) => setFont(e.target.value)}>
+                    {FONT_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Colore testo">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={captionColor}
+                      onChange={(e) => setCaptionColor(e.target.value)}
+                      className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+                    />
+                    <span className="text-xs text-slate-500">{captionColor}</span>
+                  </div>
+                </Field>
+              </div>
+            </div>
+
+            {audios.length > 0 && (
+              <Field label="Audio di sottofondo">
+                <Select value={audioKey} onChange={(e) => setAudioKey(e.target.value)}>
+                  <option value="">Automatico (a rotazione)</option>
+                  <option value="none">Nessuno</option>
+                  {audios.map((a) => (
+                    <option key={a.key} value={a.key}>
+                      {a.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             )}
 
             <p className="text-xs text-slate-500">
@@ -447,12 +498,12 @@ export function ManualEditor({
           photos={photos}
           photoKey={photoKey}
           setPhotoKey={setPhotoKey}
+          postTitle={postTitle}
+          setPostTitle={setPostTitle}
           callout={callout}
           setCallout={setCallout}
           postTitleColor={postTitleColor}
           setPostTitleColor={setPostTitleColor}
-          usePostTitleColor={usePostTitleColor}
-          setUsePostTitleColor={setUsePostTitleColor}
           postTitleFont={postTitleFont}
           setPostTitleFont={setPostTitleFont}
           postCalloutColor={postCalloutColor}
@@ -572,12 +623,12 @@ function PostPicker({
   photos,
   photoKey,
   setPhotoKey,
+  postTitle,
+  setPostTitle,
   callout,
   setCallout,
   postTitleColor,
   setPostTitleColor,
-  usePostTitleColor,
-  setUsePostTitleColor,
   postTitleFont,
   setPostTitleFont,
   postCalloutColor,
@@ -588,12 +639,12 @@ function PostPicker({
   photos: MediaItem[];
   photoKey: string | null;
   setPhotoKey: (k: string | null) => void;
+  postTitle: string;
+  setPostTitle: (v: string) => void;
   callout: string;
   setCallout: (v: string) => void;
   postTitleColor: string;
   setPostTitleColor: (v: string) => void;
-  usePostTitleColor: boolean;
-  setUsePostTitleColor: (v: boolean) => void;
   postTitleFont: string;
   setPostTitleFont: (v: string) => void;
   postCalloutColor: string;
@@ -640,71 +691,78 @@ function PostPicker({
         )}
       </Field>
 
-      <Field label="Testo sul post">
-        <Textarea
-          rows={3}
-          placeholder="Es. hotel 4★, mezza pensione, dal … al …, da € …"
-          value={callout}
-          onChange={(e) => setCallout(e.target.value)}
-        />
-      </Field>
-
-      <Field label="Colore titolo">
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-            <input
-              type="checkbox"
-              checked={usePostTitleColor}
-              onChange={(e) => setUsePostTitleColor(e.target.checked)}
-              className="h-4 w-4 rounded"
-            />
-            Personalizzato
-          </label>
-          <input
-            type="color"
-            value={postTitleColor}
-            disabled={!usePostTitleColor}
-            onChange={(e) => setPostTitleColor(e.target.value)}
-            className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700"
+      {/* Sezione TITOLO */}
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Titolo
+        </p>
+        <Field label="Testo del titolo">
+          <Input
+            value={postTitle}
+            onChange={(e) => setPostTitle(e.target.value)}
+            placeholder="Lascia vuoto per non mostrare nessun titolo"
           />
-          <span className="text-xs text-slate-500">
-            {usePostTitleColor ? postTitleColor : "gradiente automatico"}
-          </span>
+        </Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Colore titolo">
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={postTitleColor}
+                onChange={(e) => setPostTitleColor(e.target.value)}
+                className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+              />
+              <span className="text-xs text-slate-500">{postTitleColor}</span>
+            </div>
+          </Field>
+          <Field label="Stile titolo">
+            <Select value={postTitleFont} onChange={(e) => setPostTitleFont(e.target.value)}>
+              {FONT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
         </div>
-      </Field>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Stile titolo">
-          <Select value={postTitleFont} onChange={(e) => setPostTitleFont(e.target.value)}>
-            {FONT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Colore testo">
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={postCalloutColor}
-              onChange={(e) => setPostCalloutColor(e.target.value)}
-              className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
-            />
-            <span className="text-xs text-slate-500">{postCalloutColor}</span>
-          </div>
-        </Field>
       </div>
 
-      <Field label="Stile testo">
-        <Select value={postCalloutFont} onChange={(e) => setPostCalloutFont(e.target.value)}>
-          {FONT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </Select>
-      </Field>
+      {/* Sezione TESTO */}
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Testo
+        </p>
+        <Field label="Testo sul post">
+          <Textarea
+            rows={3}
+            placeholder="Es. hotel 4★, mezza pensione, dal … al …, da € …"
+            value={callout}
+            onChange={(e) => setCallout(e.target.value)}
+          />
+        </Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Stile testo">
+            <Select value={postCalloutFont} onChange={(e) => setPostCalloutFont(e.target.value)}>
+              {FONT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Colore testo">
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={postCalloutColor}
+                onChange={(e) => setPostCalloutColor(e.target.value)}
+                className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+              />
+              <span className="text-xs text-slate-500">{postCalloutColor}</span>
+            </div>
+          </Field>
+        </div>
+      </div>
     </div>
   );
 }

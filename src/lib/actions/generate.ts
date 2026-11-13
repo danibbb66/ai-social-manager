@@ -43,10 +43,15 @@ async function revalidateAfter(id: string) {
  */
 export async function createManualVideoAction(input: {
   destination: string;
+  /** Titolo della copertina, scritto a mano. Vuoto = nessun titolo. */
+  title?: string | null;
   clips: { key: string; startSec: number; endSec: number; caption?: string | null }[];
   font?: string;
   captionColor?: string | null;
   titleColor?: string | null;
+  titleFont?: string | null;
+  /** Traccia audio scelta (chiave `audio/…`), "none" per niente, vuoto per automatico. */
+  audioKey?: string | null;
   platforms?: Platform[];
 }): Promise<GenerateResult> {
   try {
@@ -72,11 +77,13 @@ export async function createManualVideoAction(input: {
 
     const video = await generateManualVideoForContent({
       contentId: content.id,
-      title: destination,
+      title: input.title?.trim() || "",
       clips,
       font: input.font,
       captionColor: input.captionColor,
       titleColor: input.titleColor,
+      titleFont: input.titleFont,
+      audioKey: input.audioKey ?? null,
     });
 
     if (!video.ok) {
@@ -102,6 +109,8 @@ export async function createManualVideoAction(input: {
  */
 export async function createManualPostAction(input: {
   destination: string;
+  /** Titolo stampato sul post, scritto a mano. Vuoto = nessun titolo. */
+  title?: string | null;
   photoKey?: string | null;
   callout?: string | null;
   titleColor?: string | null;
@@ -132,6 +141,7 @@ export async function createManualPostAction(input: {
       destination,
       topic: destination,
       title: destination,
+      heading: input.title?.trim() || null,
       format: null,
       callout: input.callout?.trim() || null,
       titleColor: input.titleColor || null,

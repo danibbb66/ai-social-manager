@@ -111,13 +111,29 @@ async function brandLogoPath(): Promise<string | null> {
 /** Ogni "giro" completo di tracce sposta l'inizio della musica di 30s. */
 const AUDIO_ROTATION_STEP_SEC = 30;
 
-async function resolveBackgroundMusic(): Promise<{
+async function resolveBackgroundMusic(
+  preferredKey?: string | null
+): Promise<{
   path: string | null;
   volume: number;
   offsetSec: number;
 }> {
   const rawVolume = Number(process.env.VIDEO_MUSIC_VOLUME ?? "0.2");
   const volume = Number.isFinite(rawVolume) ? Math.min(1, Math.max(0, rawVolume)) : 0.2;
+
+  // Scelta manuale dall'editor: "none" → video senza audio; una chiave
+  // specifica → quella traccia e basta. Un errore qui ricade sul flusso
+  // automatico o su `null`, senza mai far fallire il reel.
+  if (preferredKey) {
+    if (preferredKey === "none") return { path: null, volume, offsetSec: 0 };
+    try {
+      const abs = await materialize(preferredKey);
+      await fs.access(abs);
+      return { path: abs, volume, offsetSec: 0 };
+    } catch {
+      console.warn(`[video] audio scelto non trovato su disco: ${preferredKey}`);
+    }
+  }
 
   const envFile = process.env.VIDEO_MUSIC_FILE?.trim();
   if (envFile) {
@@ -207,7 +223,7 @@ export interface ManualClipInput {
  */
 export async function generateManualVideoForContent(input: {
   contentId: string;
-  /** Titolo della copertina (di norma il nome della destinazione). */
+  /** Titolo della copertina (scritto a mano; vuoto = nessun titolo). */
   title: string;
   /** Clip nell'ordine scelto dall'utente. */
   clips: ManualClipInput[];
@@ -215,8 +231,12 @@ export async function generateManualVideoForContent(input: {
   font?: string;
   /** Colore del testo delle scritte (hex). Default bianco. */
   captionColor?: string | null;
-  /** Colore del titolo (hex). Assente → gradiente automatico dello stile del brand. */
+  /** Colore del titolo (hex). Default bianco. */
   titleColor?: string | null;
+  /** Preset di stile del titolo. */
+  titleFont?: string | null;
+  /** Traccia audio scelta (chiave `audio/…`), "none" per niente, vuoto/null per automatico. */
+  audioKey?: string | null;
 }): Promise<GenerateVideoResult> {
   const content = await getContentOrThrow(input.contentId);
   const provider = getVideoProvider();
@@ -248,7 +268,14 @@ export async function generateManualVideoForContent(input: {
       type: "video",
       trimStartSec: start,
       sceneSeconds: dur,
-      overlay: i === 0 ? { title, logoPath, titleColor: input.titleColor ?? null } : null,
+      overlay: i === 0
+        ? {
+            title,
+            logoPath,
+            titleColor: input.titleColor ?? null,
+            titleFont: input.titleFont ?? null,
+          }
+        : null,
       caption: caption
         ? {
             text: caption,
@@ -260,7 +287,7 @@ export async function generateManualVideoForContent(input: {
     usedKeys.push(c.key);
   }
 
-  const audio = await resolveBackgroundMusic();
+  const audio = await resolveBackgroundMusic(input.audioKey);
 
   let generated;
   try {

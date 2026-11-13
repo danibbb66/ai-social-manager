@@ -59,8 +59,10 @@ export interface MontageClip {
   overlay?: {
     title: string;
     logoPath?: string | null;
-    /** Colore del titolo (hex). Assente → gradiente automatico dello stile del brand. */
+    /** Colore del titolo (hex). Default bianco. */
     titleColor?: string | null;
+    /** Preset di stile del titolo. */
+    titleFont?: string | null;
   } | null;
   /**
    * Scritta in basso su QUESTA clip (modalità manuale): ogni scena può

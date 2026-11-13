@@ -51,8 +51,8 @@ export interface SocialCreativeInput {
    * separatamente.
    */
   orientation?: "square" | "portrait";
-  /** Titolo in evidenza: destinazione o titolo della proposta. */
-  title: string;
+  /** Titolo in evidenza: testo scritto a mano dall'utente. Vuoto/assente = nessun titolo. */
+  title?: string | null;
   /** Riga secondaria: nome della proposta o formato editoriale. */
   subtitle?: string | null;
   /**
@@ -1133,8 +1133,7 @@ ${textLayers}
 export async function renderSocialCreative(input: SocialCreativeInput): Promise<RenderedSocialCreative> {
   const size = SOCIAL_CREATIVE_SIZE;
   const height = input.orientation === "portrait" ? SOCIAL_CREATIVE_HEIGHT : size;
-  const title = input.title.trim();
-  if (!title) throw new Error("Titolo mancante: non si può comporre la creatività.");
+  const title = (input.title ?? "").trim();
   // L'uppercase va applicato PRIMA della misurazione: il testo in maiuscolo è
   // più largo, e trasformarlo dopo il wrap farebbe uscire il layout pre-misurato
   // dai bordi. Solo il layout del titolo riceve il maiuscolo: i punti editoriali,

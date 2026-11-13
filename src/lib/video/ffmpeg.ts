@@ -12,7 +12,6 @@ import {
 } from "@/lib/video/provider";
 import { logAIError } from "@/lib/logger";
 import sharp from "sharp";
-import { accentForTitle } from "@/lib/images/social-creative";
 import ffmpegStatic from "ffmpeg-static";
 import { path as ffprobeStaticPath } from "ffprobe-static";
 import { materialize, outputDirFor, publishOutput } from "@/lib/storage";
@@ -533,7 +532,8 @@ export class FfmpegVideoProvider implements VideoProvider {
           coverClip.overlay.title.trim(),
           width,
           height,
-          coverClip.overlay.titleColor
+          coverClip.overlay.titleColor,
+          coverClip.overlay.titleFont
         );
       } catch (e) {
         logAIError("ffmpeg.title", { title: coverClip.overlay.title.trim() }, e);
@@ -760,43 +760,43 @@ export class FfmpegVideoProvider implements VideoProvider {
 }
 
 /**
- * Compone il titolo della copertina come PNG trasparente con sfumatura,
- * riusando lo stesso stile del titolo dei post (gradiente bianco → accento
- * caldo + alone scuro). Viene sovrapposto via ffmpeg SOLO alla prima clip.
+ * Compone il titolo della copertina come PNG trasparente: colore pieno scelto
+ * dall'utente (default bianco) + alone scuro, con stile/peso/capitalizzazione
+ * dal preset condiviso con le scritte. Viene sovrapposto via ffmpeg SOLO alla
+ * prima clip. Se il titolo è vuoto questa funzione non viene chiamata.
  */
 async function renderTitlePng(
   title: string,
   width: number,
   height: number,
-  color?: string | null
+  color?: string | null,
+  font?: string | null
 ): Promise<string> {
-  const accent = accentForTitle(title);
-  const mid = color?.trim() || accent.mid;
-  const bottom = color?.trim() || accent.bottom;
+  const preset = CAPTION_FONT_PRESETS[font ?? "bold"] ?? CAPTION_FONT_PRESETS.bold;
+  const content = preset.uppercase ? title.toUpperCase() : title;
+  const fillColor = color?.trim() || "#ffffff";
 
-  // Corpo grande ma che rientra nella larghezza: parte da ~7.5% dell'altezza
-  // e si riduce per i nomi lunghi, come fa il titolo dei post.
+  // Corpo grande ma che rientra nella larghezza: parte da ~7.5% dell'altezza e
+  // si riduce per i testi lunghi. Il maiuscolo è più largo: si riserva un po'
+  // più di spazio per carattere per non uscire dal bordo.
   const maxFontSize = Math.round(height * 0.075);
   const minFontSize = Math.round(height * 0.04);
-  const perChar = 0.6;
-  let fontSize = Math.floor((width * 0.9) / (Math.max(1, title.length) * perChar));
+  const perChar = preset.uppercase ? 0.66 : 0.6;
+  let fontSize = Math.floor((width * 0.9) / (Math.max(1, content.length) * perChar));
   fontSize = Math.max(minFontSize, Math.min(maxFontSize, fontSize));
 
   const cx = Math.round(width / 2);
   const baseline = Math.round(height * 0.08) + fontSize;
   const haloWidth = Math.max(5, Math.round(fontSize * 0.08));
+  const styleAttr = preset.style === "italic" ? ` font-style="italic"` : "";
+  const spacingAttr = preset.spacing ? ` letter-spacing="${preset.spacing}"` : "";
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
-    `<stop offset="0%" stop-color="#ffffff"/>` +
-    `<stop offset="50%" stop-color="${mid}"/>` +
-    `<stop offset="100%" stop-color="${bottom}"/>` +
-    `</linearGradient></defs>` +
-    `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="700" font-family="${APP_FONT_STACK}" fill="#0b0f14" fill-opacity="0.55" stroke="#0b0f14" stroke-opacity="0.55" stroke-width="${haloWidth}" stroke-linejoin="round">${esc(title)}</text>` +
-    `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="700" font-family="${APP_FONT_STACK}" fill="url(#g)">${esc(title)}</text>` +
+    `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="${preset.weight}"${styleAttr}${spacingAttr} font-family="${APP_FONT_STACK}" fill="#0b0f14" fill-opacity="0.55" stroke="#0b0f14" stroke-opacity="0.55" stroke-width="${haloWidth}" stroke-linejoin="round">${esc(content)}</text>` +
+    `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="${preset.weight}"${styleAttr}${spacingAttr} font-family="${APP_FONT_STACK}" fill="${fillColor}">${esc(content)}</text>` +
     `</svg>`;
 
   const buffer = await sharp(Buffer.from(svg, "utf8")).png().toBuffer();
