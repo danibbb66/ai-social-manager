@@ -392,6 +392,7 @@ export function Modal({
   footer,
   size = "md",
   busy = false,
+  tall = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -399,9 +400,11 @@ export function Modal({
   description?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: "md" | "lg";
+  size?: "md" | "lg" | "xl";
   /** Blocca la chiusura (Escape / click sul backdrop) mentre un'azione è in corso. */
   busy?: boolean;
+  /** Corpo più alto (per editor con molte anteprime). */
+  tall?: boolean;
 }) {
   // Ref stabilizzato: evita di rilanciare l'effect a ogni render del padre.
   const onCloseRef = React.useRef(onClose);
@@ -477,7 +480,7 @@ export function Modal({
         tabIndex={-1}
         className={cn(
           "my-auto w-full rounded-xl border border-slate-200 bg-white shadow-xl focus:outline-none dark:border-slate-800 dark:bg-slate-900",
-          size === "lg" ? "max-w-4xl" : "max-w-xl"
+          size === "xl" ? "max-w-6xl" : size === "lg" ? "max-w-4xl" : "max-w-xl"
         )}
         onClick={(e) => e.stopPropagation()}
       >
@@ -498,7 +501,7 @@ export function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4">{children}</div>
+        <div className={cn("overflow-y-auto px-5 py-4", tall ? "max-h-[85vh]" : "max-h-[60vh]")}>{children}</div>
         {footer ? (
           <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3 dark:border-slate-800">
             {footer}

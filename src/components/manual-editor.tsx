@@ -27,6 +27,7 @@ interface MediaItem {
 interface ClipSelection {
   key: string;
   name: string;
+  url: string;
   durationSec: number;
   caption: string;
 }
@@ -41,6 +42,7 @@ const FONT_OPTIONS = [
 type Status =
   | { kind: "idle" }
   | { kind: "busy" }
+  | { kind: "slow"; message: string }
   | { kind: "ok"; message: string }
   | { kind: "error"; message: string };
 
@@ -105,7 +107,7 @@ export function ManualEditor({
   function addClip(item: MediaItem) {
     setSelected((s) => [
       ...s,
-      { key: item.key, name: item.name, durationSec: 3, caption: "" },
+      { key: item.key, name: item.name, url: item.url, durationSec: 3, caption: "" },
     ]);
   }
   function removeClip(i: number) {
@@ -126,35 +128,78 @@ export function ManualEditor({
   }
 
   const busy = status.kind === "busy";
+  const slow = status.kind === "slow";
 
   async function runVideo() {
     setStatus({ kind: "busy" });
-    const res = await createManualVideoAction({
-      destination: name,
-      clips: selected.map((c) => ({
-        key: c.key,
-        durationSec: c.durationSec,
-        caption: c.caption.trim() || null,
-      })),
-      font,
-    });
-    setStatus(
-      res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
-    );
-    if (res.ok) router.refresh();
+    const watchdog = setTimeout(() => {
+      setStatus((s) =>
+        s.kind === "busy"
+          ? {
+              kind: "slow",
+              message:
+                "Ancora in elaborazione… (i video possono richiedere 30–60s). Se non compare qui a breve, controlla la sezione Pianificazione: potrebbe essere già pronto.",
+            }
+          : s
+      );
+    }, 55000);
+    try {
+      const res = await createManualVideoAction({
+        destination: name,
+        clips: selected.map((c) => ({
+          key: c.key,
+          durationSec: c.durationSec,
+          caption: c.caption.trim() || null,
+        })),
+        font,
+      });
+      setStatus(
+        res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
+      );
+      if (res.ok) router.refresh();
+    } catch {
+      setStatus({
+        kind: "error",
+        message:
+          "La risposta del server non è arrivata (la generazione potrebbe essere andata a buon fine comunque). Controlla la sezione Pianificazione.",
+      });
+    } finally {
+      clearTimeout(watchdog);
+    }
   }
 
   async function runPost() {
     setStatus({ kind: "busy" });
-    const res = await createManualPostAction({
-      destination: name,
-      photoKey,
-      callout: callout.trim() || null,
-    });
-    setStatus(
-      res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
-    );
-    if (res.ok) router.refresh();
+    const watchdog = setTimeout(() => {
+      setStatus((s) =>
+        s.kind === "busy"
+          ? {
+              kind: "slow",
+              message:
+                "Ancora in elaborazione… Se non compare qui a breve, controlla la sezione Pianificazione.",
+            }
+          : s
+      );
+    }, 40000);
+    try {
+      const res = await createManualPostAction({
+        destination: name,
+        photoKey,
+        callout: callout.trim() || null,
+      });
+      setStatus(
+        res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
+      );
+      if (res.ok) router.refresh();
+    } catch {
+      setStatus({
+        kind: "error",
+        message:
+          "La risposta del server non è arrivata (la generazione potrebbe essere andata a buon fine comunque). Controlla la sezione Pianificazione.",
+      });
+    } finally {
+      clearTimeout(watchdog);
+    }
   }
 
   const totalSec = selected.reduce((a, c) => a + c.durationSec, 0);
@@ -164,7 +209,8 @@ export function ManualEditor({
       open={open}
       onClose={onClose}
       busy={busy}
-      size="lg"
+      size="xl"
+      tall
       title={`${mode === "video" ? "Video" : "Post"} manuale — ${name}`}
       description={
         mode === "video"
@@ -184,7 +230,7 @@ export function ManualEditor({
               variant="success"
               size="sm"
               onClick={runVideo}
-              disabled={busy || selected.length === 0}
+              disabled={busy || slow || selected.length === 0}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
               Genera video
@@ -199,7 +245,7 @@ export function ManualEditor({
               variant="success"
               size="sm"
               onClick={runPost}
-              disabled={busy || !photoKey}
+              disabled={busy || slow || !photoKey}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
               Genera post
@@ -248,9 +294,18 @@ export function ManualEditor({
                     className="rounded-lg border border-slate-200 p-2 dark:border-slate-800"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded bg-sky-100 text-[11px] font-semibold text-sky-700">
-                        {i + 1}
-                      </span>
+                      <div className="relative h-10 w-16 shrink-0 overflow-hidden rounded-md bg-slate-900">
+                        <video
+                          src={c.url}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="h-full w-full object-cover"
+                        />
+                        <span className="absolute left-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded bg-sky-600 text-[10px] font-semibold text-white">
+                          {i + 1}
+                        </span>
+                      </div>
                       <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700 dark:text-slate-200">
                         {c.name}
                       </span>
@@ -324,6 +379,12 @@ export function ManualEditor({
           <Check className="mt-0.5 h-3.5 w-3.5" /> {status.message}
         </p>
       )}
+      {status.kind === "slow" && (
+        <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-600">
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+          {status.message}
+        </p>
+      )}
       {status.kind === "error" && (
         <p className="mt-3 flex items-start gap-1 text-xs text-red-600">{status.message}</p>
       )}
@@ -364,7 +425,7 @@ function VideoPicker({
               muted
               playsInline
               preload="metadata"
-              className="h-12 w-20 shrink-0 rounded-md bg-slate-900 object-cover"
+              className="h-16 w-28 shrink-0 rounded-md bg-slate-900 object-cover"
             />
             <span className="min-w-0 flex-1 truncate text-xs text-slate-700 dark:text-slate-200">
               {v.name}
