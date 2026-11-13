@@ -532,7 +532,8 @@ export class FfmpegVideoProvider implements VideoProvider {
         titlePngPath = await renderTitlePng(
           coverClip.overlay.title.trim(),
           width,
-          height
+          height,
+          coverClip.overlay.titleColor
         );
       } catch (e) {
         logAIError("ffmpeg.title", { title: coverClip.overlay.title.trim() }, e);
@@ -552,7 +553,14 @@ export class FfmpegVideoProvider implements VideoProvider {
       try {
         captionPngByIndex.set(
           i,
-          await renderCaptionPng(captionText, width, height, clip.caption?.font ?? "bold")
+          await renderCaptionPng(
+            captionText,
+            width,
+            height,
+            clip.caption?.font ?? "bold",
+            clip.caption?.color,
+            clip.caption?.banner === true
+          )
         );
       } catch (e) {
         logAIError("ffmpeg.caption", { caption: captionText }, e);
@@ -639,7 +647,7 @@ export class FfmpegVideoProvider implements VideoProvider {
       let staged = `bg${i}`;
       if (titleInputIndex !== null && clip.overlay?.title) {
         filterParts.push(
-          `[${titleInputIndex}:v]scale=${width}:${height}[titlel${i}]`
+          `[${titleInputIndex}:v]scale=${width}:${height},fade=t=in:st=0:d=0.35:alpha=1,fade=t=out:st=${Math.max(0, clip.sceneSeconds - 0.35).toFixed(2)}:d=0.35:alpha=1[titlel${i}]`
         );
         filterParts.push(
           `[${staged}][titlel${i}]overlay=0:0:format=auto,setsar=1,format=yuv420p[s${i}]`
@@ -669,7 +677,9 @@ export class FfmpegVideoProvider implements VideoProvider {
       // Scritta per-clip (modalità manuale): ultima sovrapposizione, in basso.
       const captionIndex = captionInputByIndex.get(i);
       if (captionIndex !== undefined) {
-        filterParts.push(`[${captionIndex}:v]scale=${width}:${height}[capl${i}]`);
+        filterParts.push(
+          `[${captionIndex}:v]scale=${width}:${height},fade=t=in:st=0:d=0.35:alpha=1,fade=t=out:st=${Math.max(0, clip.sceneSeconds - 0.35).toFixed(2)}:d=0.35:alpha=1[capl${i}]`
+        );
         overlayId += 1;
         const midCap = `mid${i}_${overlayId}`;
         filterParts.push(
@@ -758,9 +768,12 @@ export class FfmpegVideoProvider implements VideoProvider {
 async function renderTitlePng(
   title: string,
   width: number,
-  height: number
+  height: number,
+  color?: string | null
 ): Promise<string> {
   const accent = accentForTitle(title);
+  const mid = color?.trim() || accent.mid;
+  const bottom = color?.trim() || accent.bottom;
 
   // Corpo grande ma che rientra nella larghezza: parte da ~7.5% dell'altezza
   // e si riduce per i nomi lunghi, come fa il titolo dei post.
@@ -780,8 +793,8 @@ async function renderTitlePng(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">` +
     `<stop offset="0%" stop-color="#ffffff"/>` +
-    `<stop offset="50%" stop-color="${accent.mid}"/>` +
-    `<stop offset="100%" stop-color="${accent.bottom}"/>` +
+    `<stop offset="50%" stop-color="${mid}"/>` +
+    `<stop offset="100%" stop-color="${bottom}"/>` +
     `</linearGradient></defs>` +
     `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="700" font-family="${APP_FONT_STACK}" fill="#0b0f14" fill-opacity="0.55" stroke="#0b0f14" stroke-opacity="0.55" stroke-width="${haloWidth}" stroke-linejoin="round">${esc(title)}</text>` +
     `<text x="${cx}" y="${baseline}" text-anchor="middle" font-size="${fontSize}" font-weight="700" font-family="${APP_FONT_STACK}" fill="url(#g)">${esc(title)}</text>` +
@@ -845,7 +858,9 @@ async function renderCaptionPng(
   text: string,
   width: number,
   height: number,
-  font: string
+  font: string,
+  color?: string | null,
+  banner = false
 ): Promise<string> {
   const preset = CAPTION_FONT_PRESETS[font] ?? CAPTION_FONT_PRESETS.bold;
   const content = preset.uppercase ? text.toUpperCase() : text;
@@ -870,6 +885,7 @@ async function renderCaptionPng(
   const cx = Math.round(width / 2);
   const family = APP_FONT_STACK;
   const spacing = preset.spacing ? ` letter-spacing="${preset.spacing}"` : "";
+  const fillColor = color?.trim() || "#ffffff";
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -877,10 +893,25 @@ async function renderCaptionPng(
     .map((l, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : lineHeight}">${esc(l)}</tspan>`)
     .join("");
 
+  // Riquadro semitrasparente dietro il testo, grande quanto il testo stesso.
+  const bannerRect = (() => {
+    if (!banner) return "";
+    const maxLineLen = lines.reduce((m, l) => Math.max(m, l.length), 0);
+    const textW = maxLineLen * fontSize * 0.58;
+    const padX = fontSize * 0.6;
+    const padY = fontSize * 0.35;
+    const x = Math.round(cx - textW / 2 - padX);
+    const y = Math.round(firstBaseline - fontSize - padY);
+    const w = Math.round(textW + padX * 2);
+    const h = Math.round(totalH + padY * 2);
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.round(fontSize * 0.5)}" fill="#0b0f14" fill-opacity="0.55"/>`;
+  })();
+
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    bannerRect +
     `<text x="${cx}" y="${firstBaseline}" text-anchor="middle" font-size="${fontSize}" font-weight="${preset.weight}" font-style="${preset.style}" font-family="${family}"${spacing} fill="#0b0f14" fill-opacity="0.55" stroke="#0b0f14" stroke-opacity="0.55" stroke-width="${haloWidth}" stroke-linejoin="round">${tspan}</text>` +
-    `<text x="${cx}" y="${firstBaseline}" text-anchor="middle" font-size="${fontSize}" font-weight="${preset.weight}" font-style="${preset.style}" font-family="${family}"${spacing} fill="#ffffff">${tspan}</text>` +
+    `<text x="${cx}" y="${firstBaseline}" text-anchor="middle" font-size="${fontSize}" font-weight="${preset.weight}" font-style="${preset.style}" font-family="${family}"${spacing} fill="${fillColor}">${tspan}</text>` +
     `</svg>`;
 
   const buffer = await sharp(Buffer.from(svg, "utf8")).png().toBuffer();

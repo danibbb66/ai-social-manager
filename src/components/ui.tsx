@@ -400,7 +400,7 @@ export function Modal({
   description?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: "md" | "lg" | "xl";
+  size?: "md" | "lg" | "xl" | "full";
   /** Blocca la chiusura (Escape / click sul backdrop) mentre un'azione è in corso. */
   busy?: boolean;
   /** Corpo più alto (per editor con molte anteprime). */
@@ -480,7 +480,7 @@ export function Modal({
         tabIndex={-1}
         className={cn(
           "my-auto w-full rounded-xl border border-slate-200 bg-white shadow-xl focus:outline-none dark:border-slate-800 dark:bg-slate-900",
-          size === "xl" ? "max-w-6xl" : size === "lg" ? "max-w-4xl" : "max-w-xl"
+          size === "full" ? "max-w-[97vw]" : size === "xl" ? "max-w-6xl" : size === "lg" ? "max-w-4xl" : "max-w-xl"
         )}
         onClick={(e) => e.stopPropagation()}
       >

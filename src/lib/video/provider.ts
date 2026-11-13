@@ -59,6 +59,8 @@ export interface MontageClip {
   overlay?: {
     title: string;
     logoPath?: string | null;
+    /** Colore del titolo (hex). Assente → gradiente automatico dello stile del brand. */
+    titleColor?: string | null;
   } | null;
   /**
    * Scritta in basso su QUESTA clip (modalità manuale): ogni scena può
@@ -69,6 +71,10 @@ export interface MontageClip {
     text: string;
     /** Preset di stile: "bold" | "regular" | "italic" | "uppercase". */
     font?: string;
+    /** Colore del testo della scritta (hex). Default bianco. */
+    color?: string | null;
+    /** Riquadro semitrasparente dietro la scritta (si adatta al testo). */
+    banner?: boolean;
   } | null;
 }
 

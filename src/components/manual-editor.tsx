@@ -67,6 +67,11 @@ export function ManualEditor({
   // stato VIDEO
   const [selected, setSelected] = useState<ClipSelection[]>([]);
   const [font, setFont] = useState("bold");
+  const [captionColor, setCaptionColor] = useState("#ffffff");
+  const [captionBanner, setCaptionBanner] = useState(false);
+  const [titleColor, setTitleColor] = useState("#ffffff");
+  const [useTitleColor, setUseTitleColor] = useState(false);
+  const [preview, setPreview] = useState<MediaItem | null>(null);
 
   // stato POST
   const [photoKey, setPhotoKey] = useState<string | null>(null);
@@ -152,6 +157,9 @@ export function ManualEditor({
           caption: c.caption.trim() || null,
         })),
         font,
+        captionColor,
+        captionBanner,
+        titleColor: useTitleColor ? titleColor : null,
       });
       setStatus(
         res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
@@ -209,7 +217,7 @@ export function ManualEditor({
       open={open}
       onClose={onClose}
       busy={busy}
-      size="xl"
+      size="full"
       tall
       title={`${mode === "video" ? "Video" : "Post"} manuale — ${name}`}
       description={
@@ -264,6 +272,7 @@ export function ManualEditor({
             videos={videos}
             selected={selected}
             addClip={addClip}
+            onPreview={(v) => setPreview(v)}
           />
           <div className="flex flex-col gap-3">
             <Field label="Stile scritta">
@@ -276,9 +285,62 @@ export function ManualEditor({
               </Select>
             </Field>
 
+            {mode === "video" && (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Colore scritta">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={captionColor}
+                        onChange={(e) => setCaptionColor(e.target.value)}
+                        className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+                      />
+                      <span className="text-xs text-slate-500">{captionColor}</span>
+                    </div>
+                  </Field>
+                  <Field label="Sfondo scritta">
+                    <label className="flex h-8 items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={captionBanner}
+                        onChange={(e) => setCaptionBanner(e.target.checked)}
+                        className="h-4 w-4 rounded"
+                      />
+                      Riquadro sotto il testo
+                    </label>
+                  </Field>
+                </div>
+
+                <Field label="Colore titolo">
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={useTitleColor}
+                        onChange={(e) => setUseTitleColor(e.target.checked)}
+                        className="h-4 w-4 rounded"
+                      />
+                      Personalizzato
+                    </label>
+                    <input
+                      type="color"
+                      value={titleColor}
+                      disabled={!useTitleColor}
+                      onChange={(e) => setTitleColor(e.target.value)}
+                      className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700"
+                    />
+                    <span className="text-xs text-slate-500">
+                      {useTitleColor ? titleColor : "gradiente automatico"}
+                    </span>
+                  </div>
+                </Field>
+              </>
+            )}
+
             <p className="text-xs text-slate-500">
-              Clip scelte nell'ordine del montaggio ({totalSec}s totali). Trascina con le
-              frecce, imposta secondi e scritta per ciascuna.
+              Clip scelte nell'ordine del montaggio ({totalSec}s totali). Nota: se una clip
+              è più corta dei secondi impostati, il video si accorcia (si usa la sua durata reale).
             </p>
 
             {selected.length === 0 ? (
@@ -294,7 +356,12 @@ export function ManualEditor({
                     className="rounded-lg border border-slate-200 p-2 dark:border-slate-800"
                   >
                     <div className="flex items-center gap-2">
-                      <div className="relative h-10 w-16 shrink-0 overflow-hidden rounded-md bg-slate-900">
+                      <button
+                        type="button"
+                        onClick={() => setPreview({ key: c.key, url: c.url, name: c.name })}
+                        className="relative h-10 w-16 shrink-0 cursor-pointer overflow-hidden rounded-md bg-slate-900"
+                        title="Anteprima"
+                      >
                         <video
                           src={c.url}
                           muted
@@ -305,7 +372,7 @@ export function ManualEditor({
                         <span className="absolute left-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded bg-sky-600 text-[10px] font-semibold text-white">
                           {i + 1}
                         </span>
-                      </div>
+                      </button>
                       <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700 dark:text-slate-200">
                         {c.name}
                       </span>
@@ -388,6 +455,31 @@ export function ManualEditor({
       {status.kind === "error" && (
         <p className="mt-3 flex items-start gap-1 text-xs text-red-600">{status.message}</p>
       )}
+
+      {preview && (
+        <div
+          className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/85 p-4"
+          onClick={() => setPreview(null)}
+        >
+          <video
+            src={preview.url}
+            controls
+            autoPlay
+            muted
+            playsInline
+            className="max-h-[78vh] w-auto max-w-full rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <p className="mt-3 max-w-full truncate text-sm text-white">{preview.name}</p>
+          <button
+            type="button"
+            className="mt-3 rounded-lg bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/20"
+            onClick={() => setPreview(null)}
+          >
+            Chiudi
+          </button>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -396,10 +488,12 @@ function VideoPicker({
   videos,
   selected,
   addClip,
+  onPreview,
 }: {
   videos: MediaItem[];
   selected: ClipSelection[];
   addClip: (item: MediaItem) => void;
+  onPreview: (item: MediaItem) => void;
 }) {
   if (videos.length === 0) {
     return (
@@ -420,13 +514,20 @@ function VideoPicker({
             className="flex items-center gap-3 rounded-lg border border-slate-200 p-2 dark:border-slate-800"
           >
             {/* Anteprima reale (frame 0) caricata dal browser direttamente dal bucket R2: nessun costo server. */}
-            <video
-              src={v.url}
-              muted
-              playsInline
-              preload="metadata"
-              className="h-16 w-28 shrink-0 rounded-md bg-slate-900 object-cover"
-            />
+            <button
+              type="button"
+              onClick={() => onPreview(v)}
+              className="h-16 w-28 shrink-0 overflow-hidden rounded-md bg-slate-900"
+              title="Anteprima"
+            >
+              <video
+                src={v.url}
+                muted
+                playsInline
+                preload="metadata"
+                className="h-full w-full object-cover"
+              />
+            </button>
             <span className="min-w-0 flex-1 truncate text-xs text-slate-700 dark:text-slate-200">
               {v.name}
             </span>

@@ -45,6 +45,9 @@ export async function createManualVideoAction(input: {
   destination: string;
   clips: { key: string; durationSec: number; caption?: string | null }[];
   font?: string;
+  captionColor?: string | null;
+  captionBanner?: boolean;
+  titleColor?: string | null;
   platforms?: Platform[];
 }): Promise<GenerateResult> {
   try {
@@ -73,6 +76,9 @@ export async function createManualVideoAction(input: {
       title: destination,
       clips,
       font: input.font,
+      captionColor: input.captionColor,
+      captionBanner: input.captionBanner,
+      titleColor: input.titleColor,
     });
 
     if (!video.ok) {

@@ -211,6 +211,12 @@ export async function generateManualVideoForContent(input: {
   clips: ManualClipInput[];
   /** Preset di stile delle scritte ("bold" | "regular" | "italic" | "uppercase"). */
   font?: string;
+  /** Colore del testo delle scritte (hex). Default bianco. */
+  captionColor?: string | null;
+  /** Riquadro semitrasparente dietro le scritte (si adatta al testo). */
+  captionBanner?: boolean;
+  /** Colore del titolo (hex). Assente → gradiente automatico dello stile del brand. */
+  titleColor?: string | null;
 }): Promise<GenerateVideoResult> {
   const content = await getContentOrThrow(input.contentId);
   const provider = getVideoProvider();
@@ -240,8 +246,15 @@ export async function generateManualVideoForContent(input: {
       type: "video",
       trimStartSec: 0,
       sceneSeconds: dur,
-      overlay: i === 0 ? { title, logoPath } : null,
-      caption: caption ? { text: caption, font: input.font ?? "bold" } : null,
+      overlay: i === 0 ? { title, logoPath, titleColor: input.titleColor ?? null } : null,
+      caption: caption
+        ? {
+            text: caption,
+            font: input.font ?? "bold",
+            color: input.captionColor ?? null,
+            banner: input.captionBanner === true,
+          }
+        : null,
     });
     usedKeys.push(c.key);
   }
