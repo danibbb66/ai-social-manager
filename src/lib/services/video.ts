@@ -235,6 +235,8 @@ export async function generateManualVideoForContent(input: {
   titleColor?: string | null;
   /** Preset di stile del titolo. */
   titleFont?: string | null;
+  /** Durata in secondi del titolo sullo schermo (default: durata della clip copertina). */
+  titleDurationSec?: number | null;
   /** Traccia audio scelta (chiave `audio/…`), "none" per niente, vuoto/null per automatico. */
   audioKey?: string | null;
 }): Promise<GenerateVideoResult> {
@@ -274,6 +276,7 @@ export async function generateManualVideoForContent(input: {
             logoPath,
             titleColor: input.titleColor ?? null,
             titleFont: input.titleFont ?? null,
+            titleDurationSec: input.titleDurationSec ?? null,
           }
         : null,
       caption: caption
@@ -335,6 +338,7 @@ export async function generateManualVideoForContent(input: {
           title,
           titleFont: input.titleFont ?? null,
           titleColor: input.titleColor ?? null,
+          titleDurationSec: input.titleDurationSec ?? null,
           font: input.font ?? null,
           captionColor: input.captionColor ?? null,
           audioKey: input.audioKey ?? null,

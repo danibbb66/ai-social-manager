@@ -63,6 +63,8 @@ export interface MontageClip {
     titleColor?: string | null;
     /** Preset di stile del titolo. */
     titleFont?: string | null;
+    /** Durata in secondi del titolo sullo schermo. Default: durata della clip copertina. */
+    titleDurationSec?: number | null;
   } | null;
   /**
    * Scritta in basso su QUESTA clip (modalità manuale): ogni scena può

@@ -522,9 +522,15 @@ export class FfmpegVideoProvider implements VideoProvider {
     const outFile = path.join(outDir, uniqueFilename("montage.mp4"));
 
     // Titolo della copertina: composto come PNG con gradiente (stesso stile del
-    // titolo dei post) e sovrapposto SOLO alla prima clip. Se la composizione
-    // non riesce, il montaggio prosegue senza testo: non è un fallimento.
+    // titolo dei post). La durata è indipendente dalle clip (l'utente può
+    // lasciarlo in sovraimpressione più a lungo della prima scena). Se la
+    // composizione non riesce, il montaggio prosegue senza testo.
     const coverClip = clips.find((c) => Boolean(c.overlay?.title?.trim()));
+    // Durata del titolo: quella scelta dall'utente, altrimenti la durata della
+    // clip copertina. Mai oltre la durata totale del montaggio.
+    const titleDurationSec = coverClip
+      ? Math.max(0.5, Math.min(total, coverClip.overlay?.titleDurationSec ?? coverClip.sceneSeconds))
+      : 0;
     let titlePngPath: string | null = null;
     if (coverClip?.overlay?.title) {
       try {
@@ -612,7 +618,7 @@ export class FfmpegVideoProvider implements VideoProvider {
     // la copertina. L'indice è `nextInput` dopo i logo, così non sposta le clip.
     const titleInputIndex = coverClip && titlePngPath ? nextInput : null;
     if (coverClip && titlePngPath) {
-      args.push("-loop", "1", "-t", String(coverClip.sceneSeconds), "-i", titlePngPath);
+      args.push("-loop", "1", "-t", String(titleDurationSec), "-i", titlePngPath);
       nextInput += 1;
     }
 
@@ -639,20 +645,10 @@ export class FfmpegVideoProvider implements VideoProvider {
 
       const logoIndex = logoInputByClip.get(i);
 
-      // Titolo (PNG con gradiente) SOLO sulla copertina, poi eventualmente il
-      // logo. Il titolo è un'immagine trasparente già composta a piena
-      // dimensione: si sovrappone a 0:0, quindi le clip successive restano
-      // pulite perché l'overlay appartiene solo a questa clip.
+      // Il titolo NON è più sovrapposto qui (per-clip): è un overlay globale
+      // applicato dopo il concat, così dura quanto l'utente ha scelto e non
+      // solo quanto la clip copertina. Il logo resta per-clip (solo copertina).
       let staged = `bg${i}`;
-      if (titleInputIndex !== null && clip.overlay?.title) {
-        filterParts.push(
-          `[${titleInputIndex}:v]scale=${width}:${height},fade=t=in:st=0:d=0.35:alpha=1,fade=t=out:st=${Math.max(0, clip.sceneSeconds - 0.35).toFixed(2)}:d=0.35:alpha=1[titlel${i}]`
-        );
-        filterParts.push(
-          `[${staged}][titlel${i}]overlay=0:0:format=auto,setsar=1,format=yuv420p[s${i}]`
-        );
-        staged = `s${i}`;
-      }
 
       let overlayId = 0;
       if (clip.overlay && logoIndex !== undefined) {
@@ -691,7 +687,18 @@ export class FfmpegVideoProvider implements VideoProvider {
     }
 
     const concatInputs = clips.map((_, i) => `[v${i}]`).join("");
-    filterParts.push(`${concatInputs}concat=n=${clips.length}:v=1:a=0[vout]`);
+    filterParts.push(`${concatInputs}concat=n=${clips.length}:v=1:a=0[vconcat]`);
+
+    // Overlay globale del titolo, DOPO il concat: durata indipendente dalla
+    // clip copertina (fade-out al secondo `titleDurationSec`).
+    if (titlePngPath) {
+      filterParts.push(
+        `[${titleInputIndex}:v]scale=${width}:${height},fade=t=in:st=0:d=0.35:alpha=1,fade=t=out:st=${Math.max(0, titleDurationSec - 0.35).toFixed(2)}:d=0.35:alpha=1[titlel]`
+      );
+      filterParts.push(`[vconcat][titlel]overlay=0:0:format=auto,setsar=1,format=yuv420p[vout]`);
+    } else {
+      filterParts.push(`[vconcat]null[vout]`);
+    }
 
     // Musica di sottofondo: `nextInput` è l'indice del primo input libero
     // dopo le clip e gli eventuali logo. Stessa strategia dello slideshow:

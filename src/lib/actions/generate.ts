@@ -50,6 +50,8 @@ export async function createManualVideoAction(input: {
   captionColor?: string | null;
   titleColor?: string | null;
   titleFont?: string | null;
+  /** Durata in secondi del titolo sullo schermo (default: durata della clip copertina). */
+  titleDurationSec?: number | null;
   /** Traccia audio scelta (chiave `audio/…`), "none" per niente, vuoto per automatico. */
   audioKey?: string | null;
   platforms?: Platform[];
@@ -83,6 +85,7 @@ export async function createManualVideoAction(input: {
       captionColor: input.captionColor,
       titleColor: input.titleColor,
       titleFont: input.titleFont,
+      titleDurationSec: input.titleDurationSec ?? null,
       audioKey: input.audioKey ?? null,
     });
 
@@ -250,12 +253,14 @@ export async function regenerateManualVideoAction(input: {
   captionColor?: string | null;
   titleColor?: string | null;
   titleFont?: string | null;
+  titleDurationSec?: number | null;
   audioKey?: string | null;
 }): Promise<GenerateResult> {
   try {
     const { generateManualVideoForContent } = await import("@/lib/services/video");
     const { getContentOrThrow } = await import("@/lib/services/content");
     const { prisma } = await import("@/lib/prisma");
+    const { deleteUploadedFile } = await import("@/lib/uploads");
 
     const clips = (input.clips ?? []).filter((c) => c.key && c.endSec > c.startSec);
     if (clips.length === 0) {
@@ -265,9 +270,15 @@ export async function regenerateManualVideoAction(input: {
     const content = await getContentOrThrow(input.contentId);
     const scheduled = content.scheduledDate;
 
-    // Rimuovo il montaggio precedente e la sua locandina: la rigenerazione
-    // produce un file nuovo e una locandina nuova (frame-0 del nuovo montaggio).
-    await deleteContentAssets(input.contentId, ["VIDEO", "IMAGE"]);
+    // Id dei vecchi montaggi: li eliminiamo SOLO a rigenerazione riuscita, così
+    // un errore di ffmpeg (o il timeout Vercel) non lascia il contenuto senza video.
+    const oldVideoIds = content.assets
+      .filter((a) => a.kind === "VIDEO")
+      .map((a) => a.id);
+
+    // La locandina (frame estratto) va ricreata dal nuovo montaggio: si elimina
+    // prima, così `ensureVideoPoster` non riusa il frame vecchio del vecchio video.
+    await deleteContentAssets(input.contentId, ["IMAGE"]);
 
     const video = await generateManualVideoForContent({
       contentId: input.contentId,
@@ -277,11 +288,23 @@ export async function regenerateManualVideoAction(input: {
       captionColor: input.captionColor,
       titleColor: input.titleColor,
       titleFont: input.titleFont,
+      titleDurationSec: input.titleDurationSec ?? null,
       audioKey: input.audioKey ?? null,
     });
 
     if (!video.ok) {
       return { ok: false, contentId: null, message: `Video non rigenerato: ${video.reason}` };
+    }
+
+    // Rigenerazione riuscita: ora eliminiamo i vecchi montaggi (il nuovo è già
+    // stato creato da generateManualVideoForContent).
+    for (const id of oldVideoIds) {
+      const old = await prisma.contentAsset.findUnique({ where: { id } }).catch(() => null);
+      if (!old) continue;
+      await prisma.contentAsset.delete({ where: { id: old.id } }).catch(() => undefined);
+      if ((await prisma.contentAsset.count({ where: { url: old.url } })) === 0) {
+        await deleteUploadedFile(old.url).catch(() => undefined);
+      }
     }
 
     // `markContentAsVideo` azzera la programmazione: se il contenuto era già

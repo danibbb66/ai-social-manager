@@ -119,6 +119,7 @@ function buildEditManifest(content: EditorContent): EditManifest | null {
       title: typeof manual.title === "string" ? manual.title : "",
       titleFont: typeof manual.titleFont === "string" ? manual.titleFont : "bold",
       titleColor: typeof manual.titleColor === "string" ? manual.titleColor : "#ffffff",
+      titleDurationSec: typeof manual.titleDurationSec === "number" ? manual.titleDurationSec : null,
       font: typeof manual.font === "string" ? manual.font : "bold",
       captionColor: typeof manual.captionColor === "string" ? manual.captionColor : "#ffffff",
       audioKey: typeof manual.audioKey === "string" ? manual.audioKey : "",

@@ -39,6 +39,7 @@ export type VideoEditInitial = {
   title: string;
   titleFont: string;
   titleColor: string;
+  titleDurationSec: number | null;
   font: string;
   captionColor: string;
   audioKey: string;
@@ -99,6 +100,7 @@ export function ManualEditor({
   const [captionColor, setCaptionColor] = useState("#ffffff");
   const [titleColor, setTitleColor] = useState("#ffffff");
   const [titleFont, setTitleFont] = useState("bold");
+  const [titleDuration, setTitleDuration] = useState("");
   const [audioKey, setAudioKey] = useState<string>("");
   const [audios, setAudios] = useState<MediaItem[]>([]);
   const [preview, setPreview] = useState<MediaItem | null>(null);
@@ -126,6 +128,7 @@ export function ManualEditor({
     setCaptionColor("#ffffff");
     setFont("bold");
     setAudioKey("");
+    setTitleDuration("");
     setPhotoKey(null);
     setPostTitle("");
     setCallout("");
@@ -152,6 +155,7 @@ export function ManualEditor({
             setFont(editVideo.font || "bold");
             setCaptionColor(editVideo.captionColor || "#ffffff");
             setAudioKey(editVideo.audioKey || "");
+            setTitleDuration(editVideo.titleDurationSec != null ? String(editVideo.titleDurationSec) : "");
             setSelected(
               (editVideo.clips ?? []).map((c) => {
                 const item = byKey.get(c.key);
@@ -246,6 +250,7 @@ export function ManualEditor({
         captionColor,
         titleColor,
         titleFont,
+        titleDurationSec: titleDuration.trim() ? Number(titleDuration) || null : null,
         audioKey: audioKey || null,
       };
       const res = editContentId
@@ -404,6 +409,17 @@ export function ManualEditor({
                   </Select>
                 </Field>
               </div>
+
+              <Field label="Durata titolo (secondi)" hint="Vuoto = dura quanto la prima clip">
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={titleDuration}
+                  onChange={(e) => setTitleDuration(e.target.value)}
+                  placeholder="auto"
+                />
+              </Field>
             </div>
 
             {/* Sezione TESTO (scritte per clip) */}
