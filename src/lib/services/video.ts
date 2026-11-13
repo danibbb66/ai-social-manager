@@ -329,7 +329,23 @@ export async function generateManualVideoForContent(input: {
       mimeType: "video/mp4",
       kind: "VIDEO",
       contentId: content.id,
-      metadata: { curatedKeys: usedKeys },
+      metadata: {
+        curatedKeys: usedKeys,
+        manual: {
+          title,
+          titleFont: input.titleFont ?? null,
+          titleColor: input.titleColor ?? null,
+          font: input.font ?? null,
+          captionColor: input.captionColor ?? null,
+          audioKey: input.audioKey ?? null,
+          clips: input.clips.map((c) => ({
+            key: c.key,
+            startSec: c.startSec,
+            endSec: c.endSec,
+            caption: c.caption?.trim() || null,
+          })),
+        },
+      },
     });
     await markContentAsVideo(content.id);
   } catch (e) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,6 +14,7 @@ import {
   Image as ImageIcon,
   RotateCcw,
   Rocket,
+  Pencil,
 } from "lucide-react";
 import {
   updateContentAction,
@@ -39,6 +40,11 @@ import {
 import { formatDate } from "@/lib/utils";
 import { ContentMediaSection } from "@/components/content/media-section";
 import { ApprovalActions } from "@/components/content/approval-actions";
+import {
+  ManualEditor,
+  type VideoEditInitial,
+  type PostEditInitial,
+} from "@/components/manual-editor";
 
 type EditorContent = {
   id: string;
@@ -56,6 +62,7 @@ type EditorContent = {
     filename: string;
     mimeType: string | null;
     size: number | null;
+    metadata?: Record<string, unknown> | null;
   }[];
   slides: {
     id: string;
@@ -83,6 +90,71 @@ type LibraryAsset = {
   content: { id: string; title: string | null; status: string } | null;
 };
 
+type EditManifest =
+  | { mode: "video"; slug: string; name: string; initial: VideoEditInitial }
+  | { mode: "post"; slug: string; name: string; initial: PostEditInitial };
+
+function slugFromKey(key: string, kind: "photos" | "videos"): string | null {
+  const m = key.match(new RegExp(`curated/${kind}/([a-z0-9_]+)/`));
+  return m ? m[1] : null;
+}
+
+/**
+ * Ricostruisce dall'asset del contenuto i parametri per riaprire l'editor in
+ * modalità "edit" (clip/foto + colori + titolo + gancio). Restituisce `null`
+ * quando il contenuto non è stato generato dall'editor manuale (niente
+ * metadati `curatedKeys`/`manual`) e quindi non è ri-editabile.
+ */
+function buildEditManifest(content: EditorContent): EditManifest | null {
+  const name = content.title ?? "";
+  if (content.type === "VIDEO") {
+    const video = content.assets.find((a) => a.kind === "VIDEO");
+    const meta = (video?.metadata ?? {}) as Record<string, unknown>;
+    const curatedKeys = Array.isArray(meta.curatedKeys) ? (meta.curatedKeys as string[]) : [];
+    const slug = curatedKeys.length ? slugFromKey(curatedKeys[0], "videos") : null;
+    if (!slug) return null;
+    const manual = (meta.manual ?? {}) as Record<string, unknown>;
+    const clips = Array.isArray(manual.clips) ? manual.clips : [];
+    const initial: VideoEditInitial = {
+      title: typeof manual.title === "string" ? manual.title : "",
+      titleFont: typeof manual.titleFont === "string" ? manual.titleFont : "bold",
+      titleColor: typeof manual.titleColor === "string" ? manual.titleColor : "#ffffff",
+      font: typeof manual.font === "string" ? manual.font : "bold",
+      captionColor: typeof manual.captionColor === "string" ? manual.captionColor : "#ffffff",
+      audioKey: typeof manual.audioKey === "string" ? manual.audioKey : "",
+      clips: clips.map((c) => {
+        const clip = (c ?? {}) as Record<string, unknown>;
+        return {
+          key: String(clip.key ?? ""),
+          startSec: Number(clip.startSec ?? 0),
+          endSec: Number(clip.endSec ?? 0),
+          caption: typeof clip.caption === "string" ? clip.caption : null,
+        };
+      }),
+    };
+    return { mode: "video", slug, name, initial };
+  }
+  if (content.type === "POST") {
+    const image = content.assets.find((a) => a.kind === "IMAGE");
+    const meta = (image?.metadata ?? {}) as Record<string, unknown>;
+    const manual = (meta.manual ?? {}) as Record<string, unknown>;
+    const sourceUrl = typeof meta.sourceUrl === "string" ? meta.sourceUrl : null;
+    const photoKey =
+      typeof manual.photoKey === "string" && manual.photoKey ? manual.photoKey : sourceUrl;
+    const slug = photoKey ? slugFromKey(photoKey, "photos") : null;
+    if (!slug || !photoKey) return null;
+    const initial: PostEditInitial = {
+      photoKey,
+      title: typeof manual.heading === "string" ? manual.heading : "",
+      callout: typeof manual.callout === "string" ? manual.callout : "",
+      titleColor: typeof manual.titleColor === "string" ? manual.titleColor : "#ffffff",
+      calloutColor: typeof manual.calloutColor === "string" ? manual.calloutColor : "#ffffff",
+    };
+    return { mode: "post", slug, name, initial };
+  }
+  return null;
+}
+
 export function ContentEditor({
   content,
   approvals,
@@ -106,6 +178,8 @@ export function ContentEditor({
   );
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const editManifest = useMemo(() => buildEditManifest(content), [content]);
 
   const hasCaption = caption.trim().length > 0;
 
@@ -567,6 +641,17 @@ export function ContentEditor({
           <Card>
             <CardHeader title="Azioni" />
             <div className="space-y-2 px-5 py-4">
+              {editManifest ? (
+                <Button
+                  className="w-full"
+                  variant="primary"
+                  onClick={() => setEditOpen(true)}
+                  disabled={pending || locked}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Modifica media
+                </Button>
+              ) : null}
               <Button
                 className="w-full"
                 variant="secondary"
@@ -600,6 +685,17 @@ export function ContentEditor({
           </div>
         </div>
       </div>
+
+      <ManualEditor
+        open={editOpen}
+        slug={editManifest?.slug ?? ""}
+        name={editManifest?.name ?? ""}
+        mode={editManifest?.mode ?? "video"}
+        editContentId={editManifest ? content.id : null}
+        editVideo={editManifest && editManifest.mode === "video" ? editManifest.initial : null}
+        editPost={editManifest && editManifest.mode === "post" ? editManifest.initial : null}
+        onClose={() => setEditOpen(false)}
+      />
     </div>
   );
 }

@@ -68,11 +68,11 @@ export function GenerateStudio({
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   <Badge className="bg-sky-50 text-sky-600 border-sky-200">
                     <ImageIcon className="mr-1 h-3 w-3" />
-                    {d.photoCount} foto
+                    {d.remainingPhotoCount} foto
                   </Badge>
                   <Badge className="bg-violet-50 text-violet-600 border-violet-200">
                     <Clapperboard className="mr-1 h-3 w-3" />
-                    {d.videoCount} clip
+                    {d.remainingVideoCount} clip
                   </Badge>
                 </div>
               </div>

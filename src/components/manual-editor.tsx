@@ -16,6 +16,8 @@ import { Button, EmptyState, Field, Input, Modal, Select, Textarea } from "@/com
 import {
   createManualPostAction,
   createManualVideoAction,
+  regenerateManualPostAction,
+  regenerateManualVideoAction,
 } from "@/lib/actions/generate";
 
 interface MediaItem {
@@ -32,6 +34,24 @@ interface ClipSelection {
   endSec: number;
   caption: string;
 }
+
+export type VideoEditInitial = {
+  title: string;
+  titleFont: string;
+  titleColor: string;
+  font: string;
+  captionColor: string;
+  audioKey: string;
+  clips: { key: string; startSec: number; endSec: number; caption: string | null }[];
+};
+
+export type PostEditInitial = {
+  photoKey: string;
+  title: string;
+  callout: string;
+  titleColor: string;
+  calloutColor: string;
+};
 
 const FONT_OPTIONS = [
   { value: "bold", label: "Classico (grassetto)" },
@@ -53,12 +73,19 @@ export function ManualEditor({
   name,
   mode,
   onClose,
+  editContentId = null,
+  editVideo = null,
+  editPost = null,
 }: {
   open: boolean;
   slug: string;
   name: string;
   mode: "video" | "post";
   onClose: () => void;
+  /** Quando valorizzato la finestra è in modalità "edit": rigenera al posto del create. */
+  editContentId?: string | null;
+  editVideo?: VideoEditInitial | null;
+  editPost?: PostEditInitial | null;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -81,9 +108,7 @@ export function ManualEditor({
   const [postTitle, setPostTitle] = useState("");
   const [callout, setCallout] = useState("");
   const [postTitleColor, setPostTitleColor] = useState("#ffffff");
-  const [postTitleFont, setPostTitleFont] = useState("bold");
   const [postCalloutColor, setPostCalloutColor] = useState("#ffffff");
-  const [postCalloutFont, setPostCalloutFont] = useState("bold");
 
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
@@ -91,6 +116,9 @@ export function ManualEditor({
   useEffect(() => {
     if (!open) return;
     setLoading(true);
+    const editing = editContentId != null;
+    // Ripartiamo sempre puliti: i valori di "edit" (se presenti) vengono
+    // applicati qui sotto DOPO il fetch, insieme ai media.
     setSelected([]);
     setVideoTitle("");
     setTitleColor("#ffffff");
@@ -102,18 +130,49 @@ export function ManualEditor({
     setPostTitle("");
     setCallout("");
     setPostTitleColor("#ffffff");
-    setPostTitleFont("bold");
     setPostCalloutColor("#ffffff");
-    setPostCalloutFont("bold");
     setStatus({ kind: "idle" });
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/curated-media?slug=${encodeURIComponent(slug)}`);
+        const qs = `/api/curated-media?slug=${encodeURIComponent(slug)}${editing ? "&includeUsed=1" : ""}`;
+        const res = await fetch(qs);
         const data = await res.json();
         if (cancelled) return;
         setPhotos(data.photos ?? []);
         setVideos(data.videos ?? []);
+        if (editing) {
+          if (mode === "video" && editVideo) {
+            const byKey = new Map<string, MediaItem>(
+              (data.videos ?? []).map((v: MediaItem) => [v.key, v])
+            );
+            setVideoTitle(editVideo.title ?? "");
+            setTitleFont(editVideo.titleFont || "bold");
+            setTitleColor(editVideo.titleColor || "#ffffff");
+            setFont(editVideo.font || "bold");
+            setCaptionColor(editVideo.captionColor || "#ffffff");
+            setAudioKey(editVideo.audioKey || "");
+            setSelected(
+              (editVideo.clips ?? []).map((c) => {
+                const item = byKey.get(c.key);
+                return {
+                  key: c.key,
+                  name: item?.name ?? c.key.split("/").pop() ?? c.key,
+                  url: item?.url ?? "",
+                  startSec: c.startSec,
+                  endSec: c.endSec,
+                  caption: c.caption ?? "",
+                };
+              })
+            );
+          } else if (mode === "post" && editPost) {
+            setPhotoKey(editPost.photoKey || null);
+            setPostTitle(editPost.title ?? "");
+            setCallout(editPost.callout ?? "");
+            setPostTitleColor(editPost.titleColor || "#ffffff");
+            setPostCalloutColor(editPost.calloutColor || "#ffffff");
+          }
+        }
         try {
           const ares = await fetch("/api/audio-tracks");
           const adata = await ares.json();
@@ -133,7 +192,7 @@ export function ManualEditor({
     return () => {
       cancelled = true;
     };
-  }, [open, slug]);
+  }, [open, slug, editContentId, mode]);
 
   function addClip(item: MediaItem) {
     setSelected((s) => [
@@ -175,8 +234,7 @@ export function ManualEditor({
       );
     }, 55000);
     try {
-      const res = await createManualVideoAction({
-        destination: name,
+      const common = {
         title: videoTitle.trim() || null,
         clips: selected.map((c) => ({
           key: c.key,
@@ -189,7 +247,10 @@ export function ManualEditor({
         titleColor,
         titleFont,
         audioKey: audioKey || null,
-      });
+      };
+      const res = editContentId
+        ? await regenerateManualVideoAction({ contentId: editContentId, ...common })
+        : await createManualVideoAction({ destination: name, ...common });
       setStatus(
         res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
       );
@@ -219,16 +280,16 @@ export function ManualEditor({
       );
     }, 40000);
     try {
-      const res = await createManualPostAction({
-        destination: name,
+      const common = {
         title: postTitle.trim() || null,
         photoKey,
         callout: callout.trim() || null,
         titleColor: postTitleColor,
-        titleFont: postTitleFont,
         calloutColor: postCalloutColor,
-        calloutFont: postCalloutFont,
-      });
+      };
+      const res = editContentId
+        ? await regenerateManualPostAction({ contentId: editContentId, ...common })
+        : await createManualPostAction({ destination: name, ...common });
       setStatus(
         res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
       );
@@ -275,7 +336,7 @@ export function ManualEditor({
               disabled={busy || slow || selected.length === 0}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-              Genera video
+              {editContentId ? "Rigenera video" : "Genera video"}
             </Button>
           </>
         ) : (
@@ -290,7 +351,7 @@ export function ManualEditor({
               disabled={busy || slow || !photoKey}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
-              Genera post
+              {editContentId ? "Rigenera post" : "Genera post"}
             </Button>
           </>
         )
@@ -504,12 +565,8 @@ export function ManualEditor({
           setCallout={setCallout}
           postTitleColor={postTitleColor}
           setPostTitleColor={setPostTitleColor}
-          postTitleFont={postTitleFont}
-          setPostTitleFont={setPostTitleFont}
           postCalloutColor={postCalloutColor}
           setPostCalloutColor={setPostCalloutColor}
-          postCalloutFont={postCalloutFont}
-          setPostCalloutFont={setPostCalloutFont}
         />
       )}
 
@@ -629,12 +686,8 @@ function PostPicker({
   setCallout,
   postTitleColor,
   setPostTitleColor,
-  postTitleFont,
-  setPostTitleFont,
   postCalloutColor,
   setPostCalloutColor,
-  postCalloutFont,
-  setPostCalloutFont,
 }: {
   photos: MediaItem[];
   photoKey: string | null;
@@ -645,12 +698,8 @@ function PostPicker({
   setCallout: (v: string) => void;
   postTitleColor: string;
   setPostTitleColor: (v: string) => void;
-  postTitleFont: string;
-  setPostTitleFont: (v: string) => void;
   postCalloutColor: string;
   setPostCalloutColor: (v: string) => void;
-  postCalloutFont: string;
-  setPostCalloutFont: (v: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -703,28 +752,17 @@ function PostPicker({
             placeholder="Lascia vuoto per non mostrare nessun titolo"
           />
         </Field>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Colore titolo">
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={postTitleColor}
-                onChange={(e) => setPostTitleColor(e.target.value)}
-                className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
-              />
-              <span className="text-xs text-slate-500">{postTitleColor}</span>
-            </div>
-          </Field>
-          <Field label="Stile titolo">
-            <Select value={postTitleFont} onChange={(e) => setPostTitleFont(e.target.value)}>
-              {FONT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+        <Field label="Colore titolo">
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={postTitleColor}
+              onChange={(e) => setPostTitleColor(e.target.value)}
+              className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+            />
+            <span className="text-xs text-slate-500">{postTitleColor}</span>
+          </div>
+        </Field>
       </div>
 
       {/* Sezione TESTO */}
@@ -740,28 +778,17 @@ function PostPicker({
             onChange={(e) => setCallout(e.target.value)}
           />
         </Field>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Stile testo">
-            <Select value={postCalloutFont} onChange={(e) => setPostCalloutFont(e.target.value)}>
-              {FONT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Colore testo">
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={postCalloutColor}
-                onChange={(e) => setPostCalloutColor(e.target.value)}
-                className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
-              />
-              <span className="text-xs text-slate-500">{postCalloutColor}</span>
-            </div>
-          </Field>
-        </div>
+        <Field label="Colore testo">
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={postCalloutColor}
+              onChange={(e) => setPostCalloutColor(e.target.value)}
+              className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+            />
+            <span className="text-xs text-slate-500">{postCalloutColor}</span>
+          </div>
+        </Field>
       </div>
     </div>
   );
