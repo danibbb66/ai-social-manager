@@ -36,18 +36,28 @@ async function revalidateAfter(id: string) {
   }
 }
 
-/** Crea un VIDEO dal montaggio delle clip curate della destinazione. */
-export async function createVideoAction(input: {
+/**
+ * Crea un VIDEO manuale: l'utente sceglie clip, ordine, durata e scritta per
+ * clip. Riprende `generateManualVideoForContent` con le clip indicate, senza
+ * selezione automatica.
+ */
+export async function createManualVideoAction(input: {
   destination: string;
+  clips: { key: string; durationSec: number; caption?: string | null }[];
+  font?: string;
   platforms?: Platform[];
 }): Promise<GenerateResult> {
   try {
     const { createContent, deleteContent } = await import("@/lib/services/content");
-    const { generateVideoForContent } = await import("@/lib/services/video");
+    const { generateManualVideoForContent } = await import("@/lib/services/video");
 
     const destination = (input.destination ?? "").trim();
     if (!destination) {
       return { ok: false, contentId: null, message: "Indica una destinazione." };
+    }
+    const clips = (input.clips ?? []).filter((c) => c.key && c.durationSec > 0);
+    if (clips.length === 0) {
+      return { ok: false, contentId: null, message: "Seleziona almeno una clip." };
     }
 
     const content = await createContent({
@@ -58,36 +68,37 @@ export async function createVideoAction(input: {
       platforms: input.platforms ?? DEFAULT_PLATFORMS,
     });
 
-    const video = await generateVideoForContent({
+    const video = await generateManualVideoForContent({
       contentId: content.id,
-      query: destination,
-      cleanSceneUrl: null,
+      title: destination,
+      clips,
+      font: input.font,
     });
 
     if (!video.ok) {
       await deleteContent(content.id).catch(() => undefined);
-      return {
-        ok: false,
-        contentId: null,
-        message: `Nessun video creato: ${video.reason}`,
-      };
+      return { ok: false, contentId: null, message: `Nessun video creato: ${video.reason}` };
     }
 
     await revalidateAfter(content.id);
     return {
       ok: true,
       contentId: content.id,
-      message: `Video generato (${video.durationSec}s) e collegato al contenuto. Lo trovi nella sezione Contenuti.`,
+      message: `Video generato (${video.durationSec}s). Lo trovi nella sezione Contenuti.`,
     };
   } catch (e) {
-    console.error("[action:createVideo]", e);
+    console.error("[action:createManualVideo]", e);
     return { ok: false, contentId: null, message: errorMessage(e) };
   }
 }
 
-/** Crea un POST con foto curata della destinazione + testo gancio (facoltativo). */
-export async function createPostAction(input: {
+/**
+ * Crea un POST manuale: l'utente sceglie la foto e il testo da stampare sopra.
+ * Riprende `attachStockVisual` passando `photoKey` (foto scelta) + `callout`.
+ */
+export async function createManualPostAction(input: {
   destination: string;
+  photoKey?: string | null;
   callout?: string | null;
   platforms?: Platform[];
 }): Promise<GenerateResult> {
@@ -115,15 +126,12 @@ export async function createPostAction(input: {
       title: destination,
       format: null,
       callout: input.callout?.trim() || null,
+      photoKey: input.photoKey || null,
     });
 
     if (visual.status === "failed") {
       await deleteContent(content.id).catch(() => undefined);
-      return {
-        ok: false,
-        contentId: null,
-        message: `Nessun post creato: ${visual.reason}`,
-      };
+      return { ok: false, contentId: null, message: `Nessun post creato: ${visual.reason}` };
     }
 
     await revalidateAfter(content.id);
@@ -133,7 +141,7 @@ export async function createPostAction(input: {
       message: "Post creato in stato DRAFT. Lo trovi nella sezione Contenuti.",
     };
   } catch (e) {
-    console.error("[action:createPost]", e);
+    console.error("[action:createManualPost]", e);
     return { ok: false, contentId: null, message: errorMessage(e) };
   }
 }

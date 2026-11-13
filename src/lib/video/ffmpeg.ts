@@ -542,6 +542,24 @@ export class FfmpegVideoProvider implements VideoProvider {
       }
     }
 
+    // Scritte per-clip (modalità manuale): ogni scena con un caption riceve il
+    // proprio PNG, composto in basso. Composizione "best effort": una scritta
+    // che fallisce non blocca il montaggio, la clip resta senza testo.
+    const captionPngByIndex = new Map<number, string>();
+    for (const [i, clip] of clips.entries()) {
+      const captionText = clip.caption?.text?.trim();
+      if (!captionText) continue;
+      try {
+        captionPngByIndex.set(
+          i,
+          await renderCaptionPng(captionText, width, height, clip.caption?.font ?? "bold")
+        );
+      } catch (e) {
+        logAIError("ffmpeg.caption", { caption: captionText }, e);
+        console.error("[ffmpeg] composizione scritta non riuscita: clip senza testo.");
+      }
+    }
+
     // Passata 1a: input delle clip, nell'ordine delle scene.
     // Le clip video portano il taglio prima dell'input (seek rapido) e la
     // durata della scena; le immagini un solo frame (zoompan le anima).
@@ -591,6 +609,16 @@ export class FfmpegVideoProvider implements VideoProvider {
       nextInput += 1;
     }
 
+    // Input delle scritte per-clip, DOPO titolo e logo: gli indici restano
+    // corretti (le clip occupano sempre 0..N-1).
+    const captionInputByIndex = new Map<number, number>();
+    for (const [i, png] of captionPngByIndex) {
+      const clip = clips[i];
+      captionInputByIndex.set(i, nextInput);
+      args.push("-loop", "1", "-t", String(clip.sceneSeconds), "-i", png);
+      nextInput += 1;
+    }
+
     // Passata 2: filtri. Normalizzazione comune + Ken Burns per le immagini;
     // titolo (PNG con gradiente) e logo SOLO sulle clip che dichiarano l'overlay.
     const filterParts: string[] = [];
@@ -619,6 +647,7 @@ export class FfmpegVideoProvider implements VideoProvider {
         staged = `s${i}`;
       }
 
+      let overlayId = 0;
       if (clip.overlay && logoIndex !== undefined) {
         // Il logo va RIDIMENSIONATO a una misura da watermark: senza scale
         // verrebbe sovrapposto alla sua risoluzione originale (spesso enorme),
@@ -629,12 +658,27 @@ export class FfmpegVideoProvider implements VideoProvider {
         filterParts.push(
           `[${logoIndex}:v]scale=${logoWidth}:-1:flags=lanczos,format=rgba[logol${i}]`
         );
+        overlayId += 1;
+        const midLogo = `mid${i}_${overlayId}`;
         filterParts.push(
-          `[${staged}][logol${i}]overlay=x=W-w-48:y=(H-h)/2:format=auto,setsar=1,format=yuv420p[v${i}]`
+          `[${staged}][logol${i}]overlay=x=W-w-48:y=(H-h)/2:format=auto,setsar=1,format=yuv420p[${midLogo}]`
         );
-      } else {
-        filterParts.push(`[${staged}]null[v${i}]`);
+        staged = midLogo;
       }
+
+      // Scritta per-clip (modalità manuale): ultima sovrapposizione, in basso.
+      const captionIndex = captionInputByIndex.get(i);
+      if (captionIndex !== undefined) {
+        filterParts.push(`[${captionIndex}:v]scale=${width}:${height}[capl${i}]`);
+        overlayId += 1;
+        const midCap = `mid${i}_${overlayId}`;
+        filterParts.push(
+          `[${staged}][capl${i}]overlay=0:0:format=auto,setsar=1,format=yuv420p[${midCap}]`
+        );
+        staged = midCap;
+      }
+
+      filterParts.push(`[${staged}]null[v${i}]`);
     }
 
     const concatInputs = clips.map((_, i) => `[v${i}]`).join("");
@@ -673,6 +717,9 @@ export class FfmpegVideoProvider implements VideoProvider {
     } catch (e) {
       await fs.rm(outFile, { force: true }).catch(() => undefined);
       if (titlePngPath) await fs.rm(titlePngPath, { force: true }).catch(() => undefined);
+      for (const p of captionPngByIndex.values()) {
+        await fs.rm(p, { force: true }).catch(() => undefined);
+      }
       logAIError(
         "ffmpeg.montage",
         { clips: clips.length, outFile, durationSec: total, width, height, fps },
@@ -690,6 +737,9 @@ export class FfmpegVideoProvider implements VideoProvider {
     }
 
     if (titlePngPath) await fs.rm(titlePngPath, { force: true }).catch(() => undefined);
+    for (const p of captionPngByIndex.values()) {
+      await fs.rm(p, { force: true }).catch(() => undefined);
+    }
 
     return {
       url: await publishOutput(outFile, `uploads/videos/${path.basename(outFile)}`, "video/mp4", true),
@@ -741,6 +791,102 @@ async function renderTitlePng(
   const outDir = outputDirFor("uploads/videos");
   await fs.mkdir(outDir, { recursive: true });
   const file = path.join(outDir, uniqueFilename("title.png"));
+  await fs.writeFile(file, buffer);
+  return file;
+}
+
+/**
+ * Preset di stile per le scritte per-clip (modalità manuale). Sono varianti
+ * del font libero DejaVu Sans, l'unico garantito su Vercel: niente font-file
+ * esterni che non renderebbero (tofu).
+ */
+const CAPTION_FONT_PRESETS: Record<
+  string,
+  { weight: number; style: "normal" | "italic"; uppercase: boolean; spacing: number }
+> = {
+  bold: { weight: 700, style: "normal", uppercase: false, spacing: 0 },
+  regular: { weight: 400, style: "normal", uppercase: false, spacing: 0 },
+  italic: { weight: 400, style: "italic", uppercase: false, spacing: 1 },
+  uppercase: { weight: 700, style: "normal", uppercase: true, spacing: 2 },
+};
+
+/** Spezza il testo in righe che rientrano in ~maxChars caratteri (a-capo per parole). */
+function wrapCaption(text: string, maxChars: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    if (w.length > maxChars) {
+      if (cur) {
+        lines.push(cur);
+        cur = "";
+      }
+      for (let i = 0; i < w.length; i += maxChars) lines.push(w.slice(i, i + maxChars));
+      continue;
+    }
+    if (!cur) cur = w;
+    else if ((cur + " " + w).length <= maxChars) cur += " " + w;
+    else {
+      lines.push(cur);
+      cur = w;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines.length > 0 ? lines : [""];
+}
+
+/**
+ * Compone una scritta per-clip come PNG trasparente, centrata IN BASSO, con
+ * alone scuro per leggibilità su qualsiasi clip. Il testo va a capo e il font
+ * si riduce finché non rientra in larghezza e altezza: nessun testo viene
+ * tagliato fuori dallo schermo.
+ */
+async function renderCaptionPng(
+  text: string,
+  width: number,
+  height: number,
+  font: string
+): Promise<string> {
+  const preset = CAPTION_FONT_PRESETS[font] ?? CAPTION_FONT_PRESETS.bold;
+  const content = preset.uppercase ? text.toUpperCase() : text;
+  const margin = Math.round(width * 0.08);
+  const maxTextWidth = width - margin * 2;
+
+  let fontSize = Math.round(height * 0.045);
+  let lines: string[] = [];
+  for (let attempt = 0; attempt < 7; attempt += 1) {
+    const maxChars = Math.max(6, Math.floor(maxTextWidth / (fontSize * 0.58)));
+    lines = wrapCaption(content, maxChars);
+    const lineHeight = fontSize * 1.4;
+    if (lines.length * lineHeight <= height * 0.34 || fontSize <= height * 0.02) break;
+    fontSize = Math.round(fontSize * 0.86);
+  }
+
+  const lineHeight = Math.round(fontSize * 1.4);
+  const totalH = lines.length * lineHeight;
+  const bottom = Math.round(height * 0.92);
+  const firstBaseline = bottom - totalH + fontSize;
+  const haloWidth = Math.max(3, Math.round(fontSize * 0.1));
+  const cx = Math.round(width / 2);
+  const family = APP_FONT_STACK;
+  const spacing = preset.spacing ? ` letter-spacing="${preset.spacing}"` : "";
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const tspan = lines
+    .map((l, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : lineHeight}">${esc(l)}</tspan>`)
+    .join("");
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<text x="${cx}" y="${firstBaseline}" text-anchor="middle" font-size="${fontSize}" font-weight="${preset.weight}" font-style="${preset.style}" font-family="${family}"${spacing} fill="#0b0f14" fill-opacity="0.55" stroke="#0b0f14" stroke-opacity="0.55" stroke-width="${haloWidth}" stroke-linejoin="round">${tspan}</text>` +
+    `<text x="${cx}" y="${firstBaseline}" text-anchor="middle" font-size="${fontSize}" font-weight="${preset.weight}" font-style="${preset.style}" font-family="${family}"${spacing} fill="#ffffff">${tspan}</text>` +
+    `</svg>`;
+
+  const buffer = await sharp(Buffer.from(svg, "utf8")).png().toBuffer();
+  const outDir = outputDirFor("uploads/videos");
+  await fs.mkdir(outDir, { recursive: true });
+  const file = path.join(outDir, uniqueFilename("caption.png"));
   await fs.writeFile(file, buffer);
   return file;
 }

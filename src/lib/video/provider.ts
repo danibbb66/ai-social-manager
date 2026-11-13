@@ -60,6 +60,16 @@ export interface MontageClip {
     title: string;
     logoPath?: string | null;
   } | null;
+  /**
+   * Scritta in basso su QUESTA clip (modalità manuale): ogni scena può
+   * portare il proprio testo, composto come PNG trasparente e sovrapposto
+   * solo alla clip che lo dichiara.
+   */
+  caption?: {
+    text: string;
+    /** Preset di stile: "bold" | "regular" | "italic" | "uppercase". */
+    font?: string;
+  } | null;
 }
 
 /**

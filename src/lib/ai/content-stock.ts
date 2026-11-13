@@ -540,6 +540,12 @@ export async function attachStockVisual(input: {
   /** Testo "gancio" centrato sul post, fornito dall'utente in chat. */
   callout?: string | null;
   /**
+   * Foto CURATA scelta a mano (chiave di storage, es. curated/photos/bali/x.jpg).
+   * Se indicata, viene usata QUESTA foto invece della selezione automatica,
+   * ignorando anche il dedup "già usata" (scelta esplicita dell'utente).
+   */
+  photoKey?: string | null;
+  /**
    * Salva anche la copia pulita (senza overlay) come asset scollegato: la usa
    * la pipeline video per le clip successive alla copertina.
    */
@@ -581,11 +587,24 @@ export async function attachStockVisual(input: {
   if (!buffer && curatedSlug) {
     const curatedPhotos = await listCuratedPhotos(curatedSlug);
     if (curatedPhotos.length > 0) {
-      // Dedup: salta le foto curate già usate da un altro contenuto, così ogni
-      // post mostra una scena nuova e non ripete la stessa immagine.
-      const usedKeys = await usedCuratedPhotoKeys();
-      const available = curatedPhotos.filter((k) => !usedKeys.has(k));
-      const picked = available[Math.floor(Math.random() * available.length)];
+      // Foto scelta a mano dall'utente (modalità manuale): vince su tutto,
+      // anche se già usata altrove. Se la chiave non è nella cartella si
+      // ricade sulla selezione automatica per non bloccare il post.
+      const requested = input.photoKey && curatedPhotos.includes(input.photoKey)
+        ? input.photoKey
+        : null;
+      let picked: string | null = null;
+      if (requested) {
+        picked = requested;
+      } else {
+        // Dedup: salta le foto curate già usate da un altro contenuto, così ogni
+        // post mostra una scena nuova e non ripete la stessa immagine.
+        const usedKeys = await usedCuratedPhotoKeys();
+        const available = curatedPhotos.filter((k) => !usedKeys.has(k));
+        picked = available.length > 0
+          ? available[Math.floor(Math.random() * available.length)]
+          : null;
+      }
       if (picked) {
         try {
           buffer = await readFileBuffer(picked);
