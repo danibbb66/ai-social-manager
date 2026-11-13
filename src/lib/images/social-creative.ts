@@ -62,6 +62,14 @@ export interface SocialCreativeInput {
    * il post resta solo con il titolo della destinazione.
    */
   callout?: string | null;
+  /** Colore del titolo (hex). Se assente, si usa il gradiente automatico. */
+  titleColor?: string | null;
+  /** Preset di stile del titolo: "bold" | "regular" | "italic" | "uppercase". */
+  titleFont?: string | null;
+  /** Colore del testo gancio (hex). Se assente, bianco. */
+  calloutColor?: string | null;
+  /** Preset di stile del testo gancio. */
+  calloutFont?: string | null;
   /**
    * Occhiello: la rubrica del contenuto, stampata sopra il titolo.
    *
@@ -204,6 +212,26 @@ function textWidth(text: string, fontSize: number, bold: boolean): number {
   let units = 0;
   for (const ch of text) units += table[ch] ?? fallback;
   return (units * fontSize) / 1000;
+}
+
+/**
+ * Preset di stile condivisi con il montaggio video: varianti del font libero
+ * DejaVu Sans, l'unico garantito su Vercel. "font" non è un file di font, sono
+ * peso/stile/capitalizzazione: l'unica cosa che può variare in modo affidabile
+ * senza introdurre font esterni che non renderebbero (tofu).
+ */
+const FONT_PRESETS: Record<
+  string,
+  { weight: number; style: "normal" | "italic"; uppercase: boolean }
+> = {
+  bold: { weight: 700, style: "normal", uppercase: false },
+  regular: { weight: 400, style: "normal", uppercase: false },
+  italic: { weight: 400, style: "italic", uppercase: false },
+  uppercase: { weight: 700, style: "normal", uppercase: true },
+};
+
+function fontPreset(font?: string | null) {
+  return FONT_PRESETS[font ?? "bold"] ?? FONT_PRESETS.bold;
 }
 
 /** Corpo di partenza del titolo, in rapporto al lato della creatività. */
@@ -739,8 +767,15 @@ function buildOverlay(input: {
   height: number;
   /** Accento del titolo, scelto dal renderer in base al nome della destinazione. */
   accent: { mid: string; bottom: string };
+  /** Colore del titolo (hex), o `null` per il gradiente automatico. */
+  titleColor?: string | null;
+  /** Preset di stile del titolo (già applicato come uppercase a monte). */
+  titleFont?: string | null;
 }): string {
-  const { size, title, kicker, subtitle, commercial, points, card, rowHeight, subtitleH, height, accent } = input;
+  const { size, title, kicker, subtitle, commercial, points, card, rowHeight, subtitleH, height, accent, titleColor, titleFont } = input;
+  const titlePreset = fontPreset(titleFont);
+  const titleFill = titleColor?.trim() ? titleColor.trim() : "url(#titleFill)";
+  const titleStyleAttr = titlePreset.style === "italic" ? ` font-style="italic"` : "";
   const family = APP_FONT_STACK;
   // Senza dati né punti la card è solo un contenitore per il titolo: si toglie
   // del tutto e il titolo poggia direttamente sulla foto (velatura in basso +
@@ -784,12 +819,13 @@ function buildOverlay(input: {
     const y = innerY + title.firstBaseline + i * title.step;
     const attrs =
       `x="${innerCenterX}" y="${y}" text-anchor="middle" font-size="${title.fontSize}" ` +
-      `font-weight="700" font-family="${family}"`;
+      `font-weight="${titlePreset.weight}"${titleStyleAttr} font-family="${family}"`;
     layers.push({
       halo: `<text ${attrs} ${haloAttrs}>${esc(line)}</text>`,
       // Il titolo usa una sfumatura calda oro-champagne invece del bianco
-      // piatto: resta luminoso su qualsiasi foto ma ha più carattere.
-      fill: `<text ${attrs} fill="url(#titleFill)">${esc(line)}</text>`,
+      // piatto: resta luminoso su qualsiasi foto ma ha più carattere. Con un
+      // colore scelto dall'utente il gradiente lascia il posto al colore pieno.
+      fill: `<text ${attrs} fill="${titleFill}">${esc(line)}</text>`,
     });
   });
 
@@ -1004,9 +1040,13 @@ function buildCallout(input: {
   size: number;
   height: number;
   text: string | null | undefined;
+  color?: string | null;
+  font?: string | null;
 }): string | null {
-  const { size, height } = input;
-  const trimmed = (input.text ?? "").replace(/\s+/g, " ").trim();
+  const { size, height, color, font } = input;
+  const preset = fontPreset(font);
+  let trimmed = (input.text ?? "").replace(/\s+/g, " ").trim();
+  if (preset.uppercase) trimmed = trimmed.toUpperCase();
   if (!trimmed) return null;
 
   const maxWidth = Math.round(size * CALLOUT_MAX_WIDTH_RATIO);
@@ -1062,15 +1102,17 @@ function buildCallout(input: {
     `stroke-width="${haloWidth}" stroke-linejoin="round"`;
   const centerX = Math.round(size / 2);
 
+  const fillColor = color?.trim() || "#ffffff";
+  const styleAttr = preset.style === "italic" ? ` font-style="italic"` : "";
   const textLayers = lines
     .map((line, i) => {
       const y = bannerY + padY + firstBaseline + i * step;
       const attrs =
         `x="${centerX}" y="${y}" text-anchor="middle" font-size="${fontSize}" ` +
-        `font-weight="600" font-family="${family}"`;
+        `font-weight="${preset.weight}"${styleAttr} font-family="${family}"`;
       return (
         `<text ${attrs} ${haloAttrs}>${esc(line)}</text>` +
-        `<text ${attrs} fill="#ffffff">${esc(line)}</text>`
+        `<text ${attrs} fill="${fillColor}">${esc(line)}</text>`
       );
     })
     .join("\n");
@@ -1093,6 +1135,12 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
   const height = input.orientation === "portrait" ? SOCIAL_CREATIVE_HEIGHT : size;
   const title = input.title.trim();
   if (!title) throw new Error("Titolo mancante: non si può comporre la creatività.");
+  // L'uppercase va applicato PRIMA della misurazione: il testo in maiuscolo è
+  // più largo, e trasformarlo dopo il wrap farebbe uscire il layout pre-misurato
+  // dai bordi. Solo il layout del titolo riceve il maiuscolo: i punti editoriali,
+  // l'estrazione e l'accento restano sul nome originale, così cambiare stile non
+  // cambia né il contenuto né il colore del gradiente.
+  const displayTitle = fontPreset(input.titleFont).uppercase ? title.toUpperCase() : title;
   if (input.photo.length === 0) throw new Error("Fotografia mancante: non si può comporre la creatività.");
 
   const lines = commercialLines(input.extraction);
@@ -1180,7 +1228,7 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
       subtitleTrailing -
       commercialTrailing;
 
-    const titleLayout = wrapTitle(title, {
+    const titleLayout = wrapTitle(displayTitle, {
       maxWidth: cardInnerMax,
       // Il titolo può occupare tutto lo spazio che `contentHeight` gli ha
       // riservato (sottotitolo, punti e righe commerciali sono già sottratti).
@@ -1344,6 +1392,8 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
     rowHeight,
     subtitleH,
     accent: accentForTitle(title),
+    titleColor: input.titleColor ?? null,
+    titleFont: input.titleFont ?? null,
   });
 
   // Il marchio entra con un secondo overlay: l'SVG del testo non deve conoscerlo,
@@ -1353,7 +1403,13 @@ export async function renderSocialCreative(input: SocialCreativeInput): Promise<
   ];
   // Il gancio vive al centro: un overlay a sé, così la card e il titolo non
   // devono conoscerlo e il layout resta identico con o senza testo.
-  const calloutSvg = buildCallout({ size, height, text: input.callout });
+  const calloutSvg = buildCallout({
+    size,
+    height,
+    text: input.callout,
+    color: input.calloutColor ?? null,
+    font: input.calloutFont ?? null,
+  });
   if (calloutSvg) overlays.push({ input: Buffer.from(calloutSvg, "utf8"), top: 0, left: 0 });
   if (brandOverlay) overlays.push(brandOverlay);
 

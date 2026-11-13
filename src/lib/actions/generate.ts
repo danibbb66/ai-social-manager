@@ -104,6 +104,10 @@ export async function createManualPostAction(input: {
   destination: string;
   photoKey?: string | null;
   callout?: string | null;
+  titleColor?: string | null;
+  titleFont?: string | null;
+  calloutColor?: string | null;
+  calloutFont?: string | null;
   platforms?: Platform[];
 }): Promise<GenerateResult> {
   try {
@@ -130,6 +134,10 @@ export async function createManualPostAction(input: {
       title: destination,
       format: null,
       callout: input.callout?.trim() || null,
+      titleColor: input.titleColor || null,
+      titleFont: input.titleFont || null,
+      calloutColor: input.calloutColor || null,
+      calloutFont: input.calloutFont || null,
       photoKey: input.photoKey || null,
     });
 

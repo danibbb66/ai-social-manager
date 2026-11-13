@@ -76,6 +76,11 @@ export function ManualEditor({
   // stato POST
   const [photoKey, setPhotoKey] = useState<string | null>(null);
   const [callout, setCallout] = useState("");
+  const [postTitleColor, setPostTitleColor] = useState("#ffffff");
+  const [usePostTitleColor, setUsePostTitleColor] = useState(false);
+  const [postTitleFont, setPostTitleFont] = useState("bold");
+  const [postCalloutColor, setPostCalloutColor] = useState("#ffffff");
+  const [postCalloutFont, setPostCalloutFont] = useState("bold");
 
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
@@ -86,6 +91,11 @@ export function ManualEditor({
     setSelected([]);
     setPhotoKey(null);
     setCallout("");
+    setPostTitleColor("#ffffff");
+    setUsePostTitleColor(false);
+    setPostTitleFont("bold");
+    setPostCalloutColor("#ffffff");
+    setPostCalloutFont("bold");
     setStatus({ kind: "idle" });
     let cancelled = false;
     (async () => {
@@ -194,6 +204,10 @@ export function ManualEditor({
         destination: name,
         photoKey,
         callout: callout.trim() || null,
+        titleColor: usePostTitleColor ? postTitleColor : null,
+        titleFont: postTitleFont,
+        calloutColor: postCalloutColor,
+        calloutFont: postCalloutFont,
       });
       setStatus(
         res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
@@ -275,16 +289,6 @@ export function ManualEditor({
             onPreview={(v) => setPreview(v)}
           />
           <div className="flex flex-col gap-3">
-            <Field label="Stile scritta">
-              <Select value={font} onChange={(e) => setFont(e.target.value)}>
-                {FONT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
             {mode === "video" && (
               <>
                 <Field label="Colore titolo">
@@ -311,17 +315,28 @@ export function ManualEditor({
                   </div>
                 </Field>
 
-                <Field label="Colore scritta">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={captionColor}
-                      onChange={(e) => setCaptionColor(e.target.value)}
-                      className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
-                    />
-                    <span className="text-xs text-slate-500">{captionColor}</span>
-                  </div>
-                </Field>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Field label="Stile scritta">
+                    <Select value={font} onChange={(e) => setFont(e.target.value)}>
+                      {FONT_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Colore scritta">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={captionColor}
+                        onChange={(e) => setCaptionColor(e.target.value)}
+                        className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+                      />
+                      <span className="text-xs text-slate-500">{captionColor}</span>
+                    </div>
+                  </Field>
+                </div>
               </>
             )}
 
@@ -434,6 +449,16 @@ export function ManualEditor({
           setPhotoKey={setPhotoKey}
           callout={callout}
           setCallout={setCallout}
+          postTitleColor={postTitleColor}
+          setPostTitleColor={setPostTitleColor}
+          usePostTitleColor={usePostTitleColor}
+          setUsePostTitleColor={setUsePostTitleColor}
+          postTitleFont={postTitleFont}
+          setPostTitleFont={setPostTitleFont}
+          postCalloutColor={postCalloutColor}
+          setPostCalloutColor={setPostCalloutColor}
+          postCalloutFont={postCalloutFont}
+          setPostCalloutFont={setPostCalloutFont}
         />
       )}
 
@@ -549,12 +574,32 @@ function PostPicker({
   setPhotoKey,
   callout,
   setCallout,
+  postTitleColor,
+  setPostTitleColor,
+  usePostTitleColor,
+  setUsePostTitleColor,
+  postTitleFont,
+  setPostTitleFont,
+  postCalloutColor,
+  setPostCalloutColor,
+  postCalloutFont,
+  setPostCalloutFont,
 }: {
   photos: MediaItem[];
   photoKey: string | null;
   setPhotoKey: (k: string | null) => void;
   callout: string;
   setCallout: (v: string) => void;
+  postTitleColor: string;
+  setPostTitleColor: (v: string) => void;
+  usePostTitleColor: boolean;
+  setUsePostTitleColor: (v: boolean) => void;
+  postTitleFont: string;
+  setPostTitleFont: (v: string) => void;
+  postCalloutColor: string;
+  setPostCalloutColor: (v: string) => void;
+  postCalloutFont: string;
+  setPostCalloutFont: (v: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -602,6 +647,63 @@ function PostPicker({
           value={callout}
           onChange={(e) => setCallout(e.target.value)}
         />
+      </Field>
+
+      <Field label="Colore titolo">
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={usePostTitleColor}
+              onChange={(e) => setUsePostTitleColor(e.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            Personalizzato
+          </label>
+          <input
+            type="color"
+            value={postTitleColor}
+            disabled={!usePostTitleColor}
+            onChange={(e) => setPostTitleColor(e.target.value)}
+            className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700"
+          />
+          <span className="text-xs text-slate-500">
+            {usePostTitleColor ? postTitleColor : "gradiente automatico"}
+          </span>
+        </div>
+      </Field>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Stile titolo">
+          <Select value={postTitleFont} onChange={(e) => setPostTitleFont(e.target.value)}>
+            {FONT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Colore testo">
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={postCalloutColor}
+              onChange={(e) => setPostCalloutColor(e.target.value)}
+              className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+            />
+            <span className="text-xs text-slate-500">{postCalloutColor}</span>
+          </div>
+        </Field>
+      </div>
+
+      <Field label="Stile testo">
+        <Select value={postCalloutFont} onChange={(e) => setPostCalloutFont(e.target.value)}>
+          {FONT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
       </Field>
     </div>
   );

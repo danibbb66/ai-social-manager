@@ -312,6 +312,10 @@ async function applySocialTemplate(
     title: string | null;
     format?: string | null;
     callout?: string | null;
+    titleColor?: string | null;
+    titleFont?: string | null;
+    calloutColor?: string | null;
+    calloutFont?: string | null;
   }
 ): Promise<TemplatedImage> {
   // La destinazione vera e il topic restano distinti: il topic è la richiesta
@@ -338,6 +342,10 @@ async function applySocialTemplate(
       subtitle: null,
       kicker,
       callout: input.callout ?? null,
+      titleColor: input.titleColor ?? null,
+      titleFont: input.titleFont ?? null,
+      calloutColor: input.calloutColor ?? null,
+      calloutFont: input.calloutFont ?? null,
       orientation: "portrait",
       // I consigli e le tappe entrano dentro la card. In questo flusso non c'è
       // un catalogo da cui prendere i dati, quindi i punti vengono dalla
@@ -539,6 +547,14 @@ export async function attachStockVisual(input: {
   format?: string | null;
   /** Testo "gancio" centrato sul post, fornito dall'utente in chat. */
   callout?: string | null;
+  /** Colore del titolo stampato sul post (hex), o `null` per il gradiente. */
+  titleColor?: string | null;
+  /** Preset di stile del titolo. */
+  titleFont?: string | null;
+  /** Colore del testo gancio (hex), o `null` per il bianco. */
+  calloutColor?: string | null;
+  /** Preset di stile del testo gancio. */
+  calloutFont?: string | null;
   /**
    * Foto CURATA scelta a mano (chiave di storage, es. curated/photos/bali/x.jpg).
    * Se indicata, viene usata QUESTA foto invece della selezione automatica,
@@ -687,6 +703,10 @@ export async function attachStockVisual(input: {
     title: input.title ?? null,
     format: input.format,
     callout: input.callout ?? null,
+    titleColor: input.titleColor ?? null,
+    titleFont: input.titleFont ?? null,
+    calloutColor: input.calloutColor ?? null,
+    calloutFont: input.calloutFont ?? null,
   });
 
   // Un asset già presente in Media Library, senza template applicabile, viene
