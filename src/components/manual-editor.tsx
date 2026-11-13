@@ -28,7 +28,8 @@ interface ClipSelection {
   key: string;
   name: string;
   url: string;
-  durationSec: number;
+  startSec: number;
+  endSec: number;
   caption: string;
 }
 
@@ -68,7 +69,6 @@ export function ManualEditor({
   const [selected, setSelected] = useState<ClipSelection[]>([]);
   const [font, setFont] = useState("bold");
   const [captionColor, setCaptionColor] = useState("#ffffff");
-  const [captionBanner, setCaptionBanner] = useState(false);
   const [titleColor, setTitleColor] = useState("#ffffff");
   const [useTitleColor, setUseTitleColor] = useState(false);
   const [preview, setPreview] = useState<MediaItem | null>(null);
@@ -112,7 +112,7 @@ export function ManualEditor({
   function addClip(item: MediaItem) {
     setSelected((s) => [
       ...s,
-      { key: item.key, name: item.name, url: item.url, durationSec: 3, caption: "" },
+      { key: item.key, name: item.name, url: item.url, startSec: 0, endSec: 3, caption: "" },
     ]);
   }
   function removeClip(i: number) {
@@ -153,12 +153,12 @@ export function ManualEditor({
         destination: name,
         clips: selected.map((c) => ({
           key: c.key,
-          durationSec: c.durationSec,
+          startSec: c.startSec,
+          endSec: c.endSec,
           caption: c.caption.trim() || null,
         })),
         font,
         captionColor,
-        captionBanner,
         titleColor: useTitleColor ? titleColor : null,
       });
       setStatus(
@@ -210,19 +210,19 @@ export function ManualEditor({
     }
   }
 
-  const totalSec = selected.reduce((a, c) => a + c.durationSec, 0);
+  const totalSec = selected.reduce((a, c) => a + Math.max(0, c.endSec - c.startSec), 0);
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       busy={busy}
-      size="full"
+      size="xl"
       tall
       title={`${mode === "video" ? "Video" : "Post"} manuale — ${name}`}
       description={
         mode === "video"
-          ? "Scegli le clip nell'ordine che vuoi, imposta durata e scritta per ognuna."
+          ? "Scegli le clip nell'ordine che vuoi, imposta inizio, fine e scritta per ognuna."
           : "Scegli la foto e scrivi il testo da stampare sopra il post."
       }
       footer={
@@ -287,31 +287,6 @@ export function ManualEditor({
 
             {mode === "video" && (
               <>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Colore scritta">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        value={captionColor}
-                        onChange={(e) => setCaptionColor(e.target.value)}
-                        className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
-                      />
-                      <span className="text-xs text-slate-500">{captionColor}</span>
-                    </div>
-                  </Field>
-                  <Field label="Sfondo scritta">
-                    <label className="flex h-8 items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                      <input
-                        type="checkbox"
-                        checked={captionBanner}
-                        onChange={(e) => setCaptionBanner(e.target.checked)}
-                        className="h-4 w-4 rounded"
-                      />
-                      Riquadro sotto il testo
-                    </label>
-                  </Field>
-                </div>
-
                 <Field label="Colore titolo">
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
@@ -333,6 +308,18 @@ export function ManualEditor({
                     <span className="text-xs text-slate-500">
                       {useTitleColor ? titleColor : "gradiente automatico"}
                     </span>
+                  </div>
+                </Field>
+
+                <Field label="Colore scritta">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={captionColor}
+                      onChange={(e) => setCaptionColor(e.target.value)}
+                      className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+                    />
+                    <span className="text-xs text-slate-500">{captionColor}</span>
                   </div>
                 </Field>
               </>
@@ -359,7 +346,7 @@ export function ManualEditor({
                       <button
                         type="button"
                         onClick={() => setPreview({ key: c.key, url: c.url, name: c.name })}
-                        className="relative h-10 w-16 shrink-0 cursor-pointer overflow-hidden rounded-md bg-slate-900"
+                        className="relative h-14 w-24 shrink-0 cursor-pointer overflow-hidden rounded-md bg-slate-900"
                         title="Anteprima"
                       >
                         <video
@@ -369,7 +356,7 @@ export function ManualEditor({
                           preload="metadata"
                           className="h-full w-full object-cover"
                         />
-                        <span className="absolute left-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded bg-sky-600 text-[10px] font-semibold text-white">
+                        <span className="absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded bg-sky-600 text-xs font-semibold text-white">
                           {i + 1}
                         </span>
                       </button>
@@ -403,23 +390,32 @@ export function ManualEditor({
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <div className="mt-2 flex gap-2">
-                      <div className="w-24">
-                        <Input
-                          type="number"
-                          min={1}
-                          max={30}
-                          value={c.durationSec}
-                          onChange={(e) =>
-                            setClip(i, {
-                              durationSec: Math.min(30, Math.max(1, Number(e.target.value) || 1)),
-                            })
-                          }
-                        />
-                      </div>
-                      <span className="self-center text-xs text-slate-400">sec</span>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="text-xs text-slate-400">da</span>
                       <Input
-                        className="flex-1"
+                        type="number"
+                        min={0}
+                        className="w-16"
+                        value={c.startSec}
+                        onChange={(e) => {
+                          const ns = Math.max(0, Math.round(Number(e.target.value) || 0));
+                          setClip(i, { startSec: ns, endSec: Math.max(c.endSec, ns + 1) });
+                        }}
+                      />
+                      <span className="text-xs text-slate-400">a</span>
+                      <Input
+                        type="number"
+                        min={c.startSec + 1}
+                        className="w-16"
+                        value={c.endSec}
+                        onChange={(e) => {
+                          const ne = Math.round(Number(e.target.value) || 0);
+                          setClip(i, { endSec: Math.max(c.startSec + 1, ne) });
+                        }}
+                      />
+                      <span className="text-xs text-slate-400">s</span>
+                      <Input
+                        className="min-w-[120px] flex-1"
                         placeholder="Scritta su questa clip (opzionale)"
                         value={c.caption}
                         onChange={(e) => setClip(i, { caption: e.target.value })}

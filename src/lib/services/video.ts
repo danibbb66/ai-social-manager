@@ -189,8 +189,10 @@ async function resolveBackgroundMusic(): Promise<{
 export interface ManualClipInput {
   /** Chiave di storage della clip curata (es. curated/videos/bali/beach.mp4). */
   key: string;
-  /** Durata della scena in secondi (1..30). */
-  durationSec: number;
+  /** Secondo della clip da cui partire. */
+  startSec: number;
+  /** Secondo della clip in cui finire (deve essere > startSec). */
+  endSec: number;
   /** Scritta opzionale mostrata in basso su questa clip. */
   caption?: string | null;
 }
@@ -213,8 +215,6 @@ export async function generateManualVideoForContent(input: {
   font?: string;
   /** Colore del testo delle scritte (hex). Default bianco. */
   captionColor?: string | null;
-  /** Riquadro semitrasparente dietro le scritte (si adatta al testo). */
-  captionBanner?: boolean;
   /** Colore del titolo (hex). Assente → gradiente automatico dello stile del brand. */
   titleColor?: string | null;
 }): Promise<GenerateVideoResult> {
@@ -226,7 +226,7 @@ export async function generateManualVideoForContent(input: {
   }
 
   const clips = input.clips.filter(
-    (c) => c.key && c.durationSec > 0 && /^curated\/videos\/[a-z0-9_]+\/.+$/.test(c.key)
+    (c) => c.key && c.endSec > c.startSec && /^curated\/videos\/[a-z0-9_]+\/.+$/.test(c.key)
   );
   if (clips.length === 0) {
     return { ok: false, reason: "Nessuna clip selezionata per il montaggio." };
@@ -239,12 +239,14 @@ export async function generateManualVideoForContent(input: {
   const usedKeys: string[] = [];
   for (const [i, c] of clips.entries()) {
     const abs = await clipInputPath(c.key);
-    const dur = Math.min(30, Math.max(1, Math.round(c.durationSec)));
+    const start = Math.max(0, Math.round(c.startSec || 0));
+    const end = Math.max(start + 1, Math.round(c.endSec || start + 1));
+    const dur = Math.min(30, end - start);
     const caption = c.caption?.trim();
     montageClips.push({
       path: abs,
       type: "video",
-      trimStartSec: 0,
+      trimStartSec: start,
       sceneSeconds: dur,
       overlay: i === 0 ? { title, logoPath, titleColor: input.titleColor ?? null } : null,
       caption: caption
@@ -252,7 +254,6 @@ export async function generateManualVideoForContent(input: {
             text: caption,
             font: input.font ?? "bold",
             color: input.captionColor ?? null,
-            banner: input.captionBanner === true,
           }
         : null,
     });

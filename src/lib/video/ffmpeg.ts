@@ -558,8 +558,7 @@ export class FfmpegVideoProvider implements VideoProvider {
             width,
             height,
             clip.caption?.font ?? "bold",
-            clip.caption?.color,
-            clip.caption?.banner === true
+            clip.caption?.color
           )
         );
       } catch (e) {
@@ -859,8 +858,7 @@ async function renderCaptionPng(
   width: number,
   height: number,
   font: string,
-  color?: string | null,
-  banner = false
+  color?: string | null
 ): Promise<string> {
   const preset = CAPTION_FONT_PRESETS[font] ?? CAPTION_FONT_PRESETS.bold;
   const content = preset.uppercase ? text.toUpperCase() : text;
@@ -893,23 +891,8 @@ async function renderCaptionPng(
     .map((l, i) => `<tspan x="${cx}" dy="${i === 0 ? 0 : lineHeight}">${esc(l)}</tspan>`)
     .join("");
 
-  // Riquadro semitrasparente dietro il testo, grande quanto il testo stesso.
-  const bannerRect = (() => {
-    if (!banner) return "";
-    const maxLineLen = lines.reduce((m, l) => Math.max(m, l.length), 0);
-    const textW = maxLineLen * fontSize * 0.58;
-    const padX = fontSize * 0.6;
-    const padY = fontSize * 0.35;
-    const x = Math.round(cx - textW / 2 - padX);
-    const y = Math.round(firstBaseline - fontSize - padY);
-    const w = Math.round(textW + padX * 2);
-    const h = Math.round(totalH + padY * 2);
-    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.round(fontSize * 0.5)}" fill="#0b0f14" fill-opacity="0.55"/>`;
-  })();
-
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
-    bannerRect +
     `<text x="${cx}" y="${firstBaseline}" text-anchor="middle" font-size="${fontSize}" font-weight="${preset.weight}" font-style="${preset.style}" font-family="${family}"${spacing} fill="#0b0f14" fill-opacity="0.55" stroke="#0b0f14" stroke-opacity="0.55" stroke-width="${haloWidth}" stroke-linejoin="round">${tspan}</text>` +
     `<text x="${cx}" y="${firstBaseline}" text-anchor="middle" font-size="${fontSize}" font-weight="${preset.weight}" font-style="${preset.style}" font-family="${family}"${spacing} fill="${fillColor}">${tspan}</text>` +
     `</svg>`;

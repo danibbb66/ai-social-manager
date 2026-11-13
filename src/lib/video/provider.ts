@@ -73,8 +73,6 @@ export interface MontageClip {
     font?: string;
     /** Colore del testo della scritta (hex). Default bianco. */
     color?: string | null;
-    /** Riquadro semitrasparente dietro la scritta (si adatta al testo). */
-    banner?: boolean;
   } | null;
 }
 

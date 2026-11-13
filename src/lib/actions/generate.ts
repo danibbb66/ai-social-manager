@@ -43,10 +43,9 @@ async function revalidateAfter(id: string) {
  */
 export async function createManualVideoAction(input: {
   destination: string;
-  clips: { key: string; durationSec: number; caption?: string | null }[];
+  clips: { key: string; startSec: number; endSec: number; caption?: string | null }[];
   font?: string;
   captionColor?: string | null;
-  captionBanner?: boolean;
   titleColor?: string | null;
   platforms?: Platform[];
 }): Promise<GenerateResult> {
@@ -58,7 +57,7 @@ export async function createManualVideoAction(input: {
     if (!destination) {
       return { ok: false, contentId: null, message: "Indica una destinazione." };
     }
-    const clips = (input.clips ?? []).filter((c) => c.key && c.durationSec > 0);
+    const clips = (input.clips ?? []).filter((c) => c.key && c.endSec > c.startSec);
     if (clips.length === 0) {
       return { ok: false, contentId: null, message: "Seleziona almeno una clip." };
     }
@@ -77,7 +76,6 @@ export async function createManualVideoAction(input: {
       clips,
       font: input.font,
       captionColor: input.captionColor,
-      captionBanner: input.captionBanner,
       titleColor: input.titleColor,
     });
 
