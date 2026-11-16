@@ -12,6 +12,7 @@ import {
   Settings,
   Plane,
   Sparkles,
+  UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -33,6 +34,7 @@ const PRIMARY_NAV: NavItem[] = [
  * Non fanno parte del flusso editoriale.
  */
 const SETTINGS_NAV: NavItem[] = [
+  { href: "/curated", label: "Carica media", icon: UploadCloud },
   { href: "/media", label: "Media", icon: ImageIcon },
   { href: "/social", label: "Social", icon: Share2 },
   { href: "/brand", label: "Brand", icon: Palette },

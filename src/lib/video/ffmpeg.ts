@@ -309,9 +309,9 @@ async function resolveAudioInput(
  * Argomenti di encoding dell'output.
  *
  * Con audio: si mappa anche `[aout]` (AAC 128k) e `-shortest` taglia
- * l'output alla durata video — la traccia è loop-ata all'infinito sull'input
- * (`-stream_loop -1`), quindi è il video a dettare la durata finale. Senza
- * audio: `-an`, comportamento precedente immutato.
+ * l'output alla durata video. La traccia NON viene loop-ata (lo stream
+ * infinito di `-stream_loop -1`/`apad` + `-shortest` fa crashare ffmpeg): si
+ * usa finita, tanto le tracce sono più lunghe del video. Senza audio: `-an`.
  */
 function buildEncodeArgs(hasAudio: boolean): string[] {
   const out: string[] = ["-map", "[vout]"];
@@ -427,9 +427,9 @@ export class FfmpegVideoProvider implements VideoProvider {
       `${concatInputs}concat=n=${slides.length}:v=1:a=0[vout]`
     );
 
-    // Musica di sottofondo: input audio loop-ato all'infinito, miscelato come
-    // traccia AAC al volume configurato e tagliato alla durata video da
-    // `-shortest`. Assente/illeggibile → `-an` (video muto), nessun errore.
+    // Musica di sottofondo: input audio finito, miscelato come traccia AAC al
+    // volume configurato e tagliato alla durata video da `-shortest`.
+    // Assente/illeggibile → `-an` (video muto), nessun errore.
     const audioPath = await resolveAudioInput(options?.audioPath);
     const audioVolume = Math.min(
       1,
@@ -440,7 +440,11 @@ export class FfmpegVideoProvider implements VideoProvider {
       // playlist) invece che dall'inizio della traccia.
       const offset = Math.max(0, options?.audioOffsetSec ?? 0);
       if (offset > 0) args.push("-ss", offset.toFixed(3));
-      args.push("-stream_loop", "-1", "-i", audioPath);
+      // Niente `-stream_loop -1` né `apad`: un flusso audio INFINITO sommato a
+      // `-shortest` fa crashare ffmpeg (exit -28). Le tracce sono sempre più
+      // lunghe del video (2-3 minuti), quindi basta usarle finite: `-shortest`
+      // taglia all'uscita alla durata del video.
+      args.push("-i", audioPath);
       filterParts.push(`[${slides.length}:a]volume=${audioVolume}[aout]`);
     }
 
@@ -605,10 +609,9 @@ export class FfmpegVideoProvider implements VideoProvider {
         logoInputByClip.set(i, nextInput);
         // Il logo è un fermo immagine: `-loop 1` lo ripete ma va SEMPRE
         // accompagnato da `-t` (durata finita della scena). Senza `-t` il loop
-        // è infinito e, insieme a `-stream_loop -1` dell'audio e a `-shortest`,
-        // ffmpeg non riesce a capire quando fermarsi: il processo si impianta
-        // e produce un file parziale. Con `-t` il logo dura esattamente quanto
-        // la clip (né un solo frame, né all'infinito).
+        // è infinito e `-shortest` non riesce a capire quando fermarsi: il
+        // processo si impianta e produce un file parziale. Con `-t` il logo
+        // dura esattamente quanto la clip (né un solo frame, né all'infinito).
         args.push("-loop", "1", "-t", String(clip.sceneSeconds), "-i", logo);
         nextInput += 1;
       }
@@ -695,7 +698,13 @@ export class FfmpegVideoProvider implements VideoProvider {
       filterParts.push(
         `[${titleInputIndex}:v]scale=${width}:${height},fade=t=in:st=0:d=0.35:alpha=1,fade=t=out:st=${Math.max(0, titleDurationSec - 0.35).toFixed(2)}:d=0.35:alpha=1[titlel]`
       );
-      filterParts.push(`[vconcat][titlel]overlay=0:0:format=auto,setsar=1,format=yuv420p[vout]`);
+      // `eof_action=pass`: quando lo stream del titolo finisce (dopo
+      // `titleDurationSec`), si passa solo il video senza più sovrapporre nulla.
+      // L'alternativa (default `repeat`) ripete l'ultimo frame semi-trasparente
+      // e lasciava il titolo "fantasma" anche sulle clip successive.
+      filterParts.push(
+        `[vconcat][titlel]overlay=0:0:format=auto:eof_action=pass,setsar=1,format=yuv420p[vout]`
+      );
     } else {
       filterParts.push(`[vconcat]null[vout]`);
     }
@@ -713,7 +722,11 @@ export class FfmpegVideoProvider implements VideoProvider {
       // playlist) invece che dall'inizio della traccia.
       const offset = Math.max(0, options?.audioOffsetSec ?? 0);
       if (offset > 0) args.push("-ss", offset.toFixed(3));
-      args.push("-stream_loop", "-1", "-i", audioPath);
+      // Niente `-stream_loop -1` né `apad`: un flusso audio INFINITO sommato a
+      // `-shortest` fa crashare ffmpeg (exit -28). Le tracce sono sempre più
+      // lunghe del video (2-3 minuti), quindi basta usarle finite: `-shortest`
+      // taglia all'uscita alla durata del video.
+      args.push("-i", audioPath);
       filterParts.push(`[${nextInput}:a]volume=${audioVolume}[aout]`);
     }
 
