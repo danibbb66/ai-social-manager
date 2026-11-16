@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
   // in /generate (~139 MB in totale).
   outputFileTracingIncludes: {
     "/generate": ["./bin/ffmpeg", "./bin/ffprobe"],
+    // La RIGENERAZIONE video parte anche dalla pagina di modifica contenuto
+    // (/contents/[id], pulsante "Modifica media"): senza i binari in questa
+    // route, l'edit falliva con "ffmpeg non trovato nel PATH" mentre la
+    // creazione (da /generate) funzionava. Costo extra: ~139 MB su un'altra
+    // funzione, ampiamente sotto il tetto Hobby.
+    "/contents/[id]": ["./bin/ffmpeg", "./bin/ffprobe"],
   },
 };
 
