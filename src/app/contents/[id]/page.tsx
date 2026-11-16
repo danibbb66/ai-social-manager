@@ -7,6 +7,11 @@ import { Card } from "@/components/ui";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
+// La rigenerazione video (montaggio ffmpeg + estrazione copertina) può
+// superare i 10s di default del piano Vercel Hobby: serve lo stesso margine
+// che diamo alla pagina /generate, altrimenti l'edit va in timeout e lascia
+// il video senza copertina (o fallisce del tutto).
+export const maxDuration = 60;
 
 export default async function ContentEditorPage({
   params,

@@ -368,7 +368,10 @@ export async function generateManualVideoForContent(input: {
     };
   }
 
-  const poster = await ensureVideoPoster(content.id, generated.pathname);
+  // `force`: questo montaggio è NUOVO, quindi la copertina deve essere SEMPRE
+  // un frame estratto da QUESTO video (non la vecchia locandina di un'eventuale
+  // rigenerazione). Usa il percorso locale appena generato: niente ri-download.
+  const poster = await ensureVideoPoster(content.id, generated.pathname, { force: true });
 
   if (isCloudStorage()) {
     await fs.rm(generated.pathname, { force: true }).catch(() => undefined);
@@ -405,14 +408,20 @@ export async function ensureVideoPoster(
   contentId: string,
   /** Percorso locale del video appena generato (cloud): usato per estrarre il
    * frame-0 senza ri-scaricare l'intero file da R2. Omesso → materialize. */
-  localVideoPath?: string
+  localVideoPath?: string,
+  opts?: { force?: boolean }
 ): Promise<VideoPosterResult> {
   const content = await getContent(contentId);
   if (!content) throw new Error(`Contenuto non trovato (${contentId}).`);
 
-  const existingImage = content.assets.find((a) => a.kind === "IMAGE");
-  if (existingImage) {
-    return { ok: true, assetId: existingImage.id, created: false };
+  // Senza `force` riusiamo un'immagine già presente (slide/catalogo/poster):
+  // evita di creare righe gemelle. Con `force` (rigenerazione) vogliamo SEMPRE
+  // una copertina estratta dal montaggio nuovo, ignorando l'eventuale vecchia.
+  if (!opts?.force) {
+    const existingImage = content.assets.find((a) => a.kind === "IMAGE");
+    if (existingImage) {
+      return { ok: true, assetId: existingImage.id, created: false };
+    }
   }
 
   // La locandina è un abbellimento, non una garanzia: un errore qui non deve

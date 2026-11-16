@@ -270,16 +270,18 @@ export async function regenerateManualVideoAction(input: {
     const content = await getContentOrThrow(input.contentId);
     const scheduled = content.scheduledDate;
 
-    // Id dei vecchi montaggi: li eliminiamo SOLO a rigenerazione riuscita, così
-    // un errore di ffmpeg (o il timeout Vercel) non lascia il contenuto senza video.
-    const oldVideoIds = content.assets
-      .filter((a) => a.kind === "VIDEO")
+    // Id dei vecchi asset (montaggio + locandina): li eliminiamo SOLO a
+    // rigenerazione riuscita. Così, se ffmpeg fallisce o Vercel va in timeout,
+    // contenuto, video e copertina vecchi restano tutti integri: niente
+    // video "non modificati" con la copertina sparita.
+    const oldAssetIds = content.assets
+      .filter((a) => a.kind === "VIDEO" || a.kind === "IMAGE")
       .map((a) => a.id);
 
-    // La locandina (frame estratto) va ricreata dal nuovo montaggio: si elimina
-    // prima, così `ensureVideoPoster` non riusa il frame vecchio del vecchio video.
-    await deleteContentAssets(input.contentId, ["IMAGE"]);
-
+    // Rigenera il video. Dentro `generateManualVideoForContent` la locandina
+    // viene ricreata in `force` dal montaggio NUOVO (frame locale, niente
+    // ri-download), quindi dopo questa chiamata il contenuto ha già video e
+    // copertina nuovi, affiancati a quelli vecchi fino alla pulizia sotto.
     const video = await generateManualVideoForContent({
       contentId: input.contentId,
       title: input.title?.trim() || "",
@@ -296,9 +298,9 @@ export async function regenerateManualVideoAction(input: {
       return { ok: false, contentId: null, message: `Video non rigenerato: ${video.reason}` };
     }
 
-    // Rigenerazione riuscita: ora eliminiamo i vecchi montaggi (il nuovo è già
-    // stato creato da generateManualVideoForContent).
-    for (const id of oldVideoIds) {
+    // Rigenerazione riuscita: eliminiamo SOLO i vecchi asset (il nuovo montaggio
+    // e la nuova locandina sono già stati creati da generateManualVideoForContent).
+    for (const id of oldAssetIds) {
       const old = await prisma.contentAsset.findUnique({ where: { id } }).catch(() => null);
       if (!old) continue;
       await prisma.contentAsset.delete({ where: { id: old.id } }).catch(() => undefined);
