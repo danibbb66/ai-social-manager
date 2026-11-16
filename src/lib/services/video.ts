@@ -483,7 +483,11 @@ async function ensureVideoPosterInner(
           os.tmpdir(),
           `asm-poster-${content.id}-${Date.now()}.jpg`
         );
-        await extractVideoFrame(localVideo, framePath, 0);
+        // 0.75s e non 0: il titolo ha una dissolvenza in entrata (fade-in da
+        // t=0 a 0.35s), quindi al frame-0 risulta invisibile e la copertina
+        // uscirebbe "senza titolo". A 0.75s titolo e logo sono già visibili
+        // (le clip durano almeno 1s), e la miniatura riflette il colore scelto.
+        await extractVideoFrame(localVideo, framePath, 0.75);
         const buffer = await fs.readFile(framePath);
         const saved = await saveUploadedFile({
           buffer,

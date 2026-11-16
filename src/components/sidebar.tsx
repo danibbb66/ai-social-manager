@@ -34,7 +34,7 @@ const PRIMARY_NAV: NavItem[] = [
  * Non fanno parte del flusso editoriale.
  */
 const SETTINGS_NAV: NavItem[] = [
-  { href: "/curated", label: "Carica media", icon: UploadCloud },
+  { href: "/curated", label: "Clip & foto", icon: UploadCloud },
   { href: "/media", label: "Media", icon: ImageIcon },
   { href: "/social", label: "Social", icon: Share2 },
   { href: "/brand", label: "Brand", icon: Palette },

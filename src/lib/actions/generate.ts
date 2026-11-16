@@ -20,7 +20,7 @@ export interface GenerateResult {
 
 const DEFAULT_PLATFORMS: Platform[] = ["INSTAGRAM", "FACEBOOK"];
 
-const paths = () => ["/", "/contents", "/generate"];
+const paths = () => ["/", "/contents", "/generate", "/planning", "/calendar", "/approvals"];
 
 function errorMessage(e: unknown): string {
   if (e instanceof Error && e.message) return e.message;
