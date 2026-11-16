@@ -259,7 +259,10 @@ export function ManualEditor({
       setStatus(
         res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
       );
-      if (res.ok) router.refresh();
+      // Reload COMPLETO (non router.refresh): dopo la rigenerazione il video
+      // nuovo ha un URL diverso e il refresh leggero non sempre aggiorna
+      // l'asset mostrato, lasciando il vecchio video in cache nella pagina.
+      if (res.ok) window.location.reload();
     } catch {
       setStatus({
         kind: "error",
@@ -298,7 +301,8 @@ export function ManualEditor({
       setStatus(
         res.ok ? { kind: "ok", message: res.message } : { kind: "error", message: res.message }
       );
-      if (res.ok) router.refresh();
+      // Reload COMPLETO: vedi runVideo (stesso problema di cache del visual).
+      if (res.ok) window.location.reload();
     } catch {
       setStatus({
         kind: "error",
