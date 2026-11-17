@@ -81,14 +81,19 @@ export async function publishContent(
   const results: { platform: string; ok: boolean; message: string; externalId?: string }[] = [];
 
   const videoAsset = content.assets.find((a) => a.kind === "VIDEO");
+  const imageUrls = content.assets
+    .filter((a) => a.kind !== "VIDEO")
+    .map((a) => a.url);
+  // Un contenuto con più immagini va pubblicato come carousel/multi-foto anche
+  // se il tipo è rimasto "POST": è ciò che l'utente intende quando carica più
+  // foto. Con una sola immagine (o un video) resta valido il tipo esplicito.
+  const effectiveContentType =
+    imageUrls.length >= 2 && !videoAsset ? "CAROUSEL" : content.type;
   const payloadInput = {
-    contentType: content.type,
+    contentType: effectiveContentType,
     caption: content.caption,
     hashtags: content.hashtags,
-    mediaUrls: content.assets
-      .filter((a) => a.kind !== "VIDEO")
-      .map((a) => a.url)
-      .slice(0, 10),
+    mediaUrls: imageUrls.slice(0, 10),
     videoUrl: videoAsset ? videoAsset.url : content.assets[0]?.url ?? null,
   };
 
