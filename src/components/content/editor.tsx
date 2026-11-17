@@ -183,6 +183,16 @@ export function ContentEditor({
   const editManifest = useMemo(() => buildEditManifest(content), [content]);
 
   const hasCaption = caption.trim().length > 0;
+  // Un carousel ha bisogno di immagini: per il flusso manuale le immagini
+  // caricate nella sezione Media (asset IMAGE) valgono come slide.
+  const carouselMissingMedia =
+    type === "CAROUSEL" &&
+    content.assets.filter((a) => a.kind === "IMAGE").length === 0 &&
+    content.slides.length === 0;
+  const approveDisabled = !hasCaption || carouselMissingMedia;
+  const approveDisabledReason = carouselMissingMedia
+    ? "Il carousel ha bisogno di almeno un'immagine: aggiungila nella sezione Media."
+    : "La caption è obbligatoria per approvare";
 
   // hasExplicitApproval arriva dal server (stessa query del publish gate):
   // non va ricalcolato qui sull'array `approvals`, che non è completo.
@@ -577,8 +587,8 @@ export function ContentEditor({
                   contentId={content.id}
                   layout="stack"
                   size="md"
-                  disabled={!hasCaption}
-                  disabledReason="La caption è obbligatoria per approvare"
+                  disabled={approveDisabled}
+                  disabledReason={approveDisabledReason}
                   beforeApprove={persistForm}
                 />
               ) : null}

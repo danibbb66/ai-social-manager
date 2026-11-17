@@ -66,10 +66,20 @@ function assertContentReadyForPublishPath(content: {
   caption: string | null;
   type: ContentType;
   slides: { id: string }[];
+  assets?: { kind: string }[];
 }): void {
-  if (content.type === "CAROUSEL" && content.slides.length === 0) {
+  // Un carousel può essere costruito in due modi: con le slide esplicite
+  // (agente chat, ormai rimosso) oppure — come nel flusso manuale — con le
+  // immagini caricate nella sezione Media del contenuto (`ContentAsset` kind
+  // IMAGE). La pubblicazione usa già gli asset come `mediaUrls`, quindi le
+  // immagini caricate SONO le slide del carousel.
+  const imageCount = (content.assets ?? []).filter(
+    (a) => a.kind === "IMAGE"
+  ).length;
+  const hasImages = content.slides.length > 0 || imageCount > 0;
+  if (content.type === "CAROUSEL" && !hasImages) {
     throw new Error(
-      "Un contenuto CAROUSEL deve avere almeno una slide prima di procedere nel flusso. Usa crea carousel dalla chat o aggiungi le slide."
+      "Un contenuto CAROUSEL deve avere almeno un'immagine prima di procedere. Aggiungi le immagini nella sezione Media del contenuto."
     );
   }
   if (!content.caption || !content.caption.trim()) {
@@ -514,6 +524,7 @@ export async function updateContent(
         caption: nextCaption,
         type: input.type ?? existing.type,
         slides: nextSlides as { id: string }[],
+        assets: existing.assets.map((a) => ({ kind: a.kind })),
       });
     }
     if (input.status === "SCHEDULED") {
