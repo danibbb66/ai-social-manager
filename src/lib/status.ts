@@ -83,9 +83,12 @@ export const STATUS_ORDER: ContentStatus[] = [
 export const STATUS_OPTIONS: { value: ContentStatus; label: string }[] =
   STATUS_ORDER.map((s) => ({ value: s, label: STATUS_META[s].label }));
 
+// Il tipo CAROUSEL non è più selezionabile a mano: un contenuto con 2+ immagini
+// viene pubblicato automaticamente come carousel (vedi src/lib/services/publish.ts).
+// Resta presente in TYPE_META per mostrare correttamente eventuali contenuti
+// carousel creati in passato.
 export const TYPE_OPTIONS: { value: ContentType; label: string }[] = [
   { value: "POST", label: "Post" },
-  { value: "CAROUSEL", label: "Carousel" },
   { value: "VIDEO", label: "Video / Reel" },
 ];
 
