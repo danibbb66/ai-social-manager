@@ -153,6 +153,50 @@ export class FacebookProvider implements SocialProvider {
         return { ok: true, message: "Video pubblicato su Facebook.", externalId: res.id };
       }
 
+      if (payload.contentType === "CAROUSEL") {
+        // Un carousel su Facebook è un post multi-foto: le foto vanno caricate
+        // una ad una come "non pubblicate" (published=false), poi allegate a
+        // un unico post /feed tramite `attached_media`. Senza questo flusso,
+        // ogni /photos pubblica un post separato e resta visibile solo la prima
+        // immagine.
+        const images = payload.mediaUrls
+          .map((u) => publicMediaUrl(u))
+          .filter((u): u is string => u !== null);
+        if (images.length === 0) {
+          return { ok: false, message: "Nessuna immagine per il carousel Facebook." };
+        }
+        // Con una sola immagine non serve il flusso multi-foto.
+        if (images.length === 1) {
+          const single = await this.graph(`/${pageId}/photos`, {
+            url: images[0],
+            caption: message,
+            access_token: token,
+          });
+          return { ok: true, message: "Foto pubblicata su Facebook.", externalId: single.id };
+        }
+        const photoIds: string[] = [];
+        for (const [i, url] of images.entries()) {
+          const uploaded = await this.graph(`/${pageId}/photos`, {
+            url,
+            published: "false",
+            access_token: token,
+          });
+          if (!uploaded.id) {
+            return {
+              ok: false,
+              message: `Impossibile caricare la foto ${i + 1} del carousel su Facebook.`,
+            };
+          }
+          photoIds.push(uploaded.id);
+        }
+        const fields: Record<string, string> = { message, access_token: token };
+        photoIds.forEach((id, i) => {
+          fields[`attached_media[${i}]`] = JSON.stringify({ media_fbid: id });
+        });
+        const post = await this.graph(`/${pageId}/feed`, fields);
+        return { ok: true, message: "Carousel pubblicato su Facebook.", externalId: post.id };
+      }
+
       // Con un media presente la pubblicazione deve includerlo: non è ammesso
       // degradare silenziosamente il post a solo testo.
       const [firstMedia] = payload.mediaUrls;
